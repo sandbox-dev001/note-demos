@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>避暑地の扉 — Three.js r146（STREETに写真背景）</title>
+<title>避暑地の扉 — Three.js r146（写真背景＆夜シーン）</title>
 <style>
   :root{ --bg:#07070a; --fg:#eaeef7; }
   html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;overflow:hidden}
@@ -50,12 +50,12 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/loaders/GLTFLoader.js"></script>
 
 <script>
-// ================= ASSETS（任意差し替え） =================
+// ================= ASSETS =================
 const ASSETS = {
   doorModel: null,  // 'https://.../door.glb'
   benchModel: null, // 'https://.../bench.glb'
 };
-// =========================================================
+// ==========================================
 
 // ---------- Three.js 基本セット ----------
 const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
@@ -80,7 +80,7 @@ const clock = new THREE.Clock();
 const hemi = new THREE.HemisphereLight(0x7ea6ff, 0x101018, 0.6); scene.add(hemi);
 const key  = new THREE.DirectionalLight(0xffffff, 1.0); key.position.set(4,6,3); scene.add(key);
 
-// Ground（HIGHLANDで草テクスチャを適用）
+// Ground（STREET/DESCENTで使用）
 const groundMat = new THREE.MeshStandardMaterial({color:0x111317, roughness:0.98});
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(100,100), groundMat);
 ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
@@ -88,25 +88,18 @@ ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
 // テクスチャローダ
 const texLoader = new THREE.TextureLoader();
 
-// STREET背景：machi.png（index.htmlと同じフォルダに配置）
-const streetBgTex = texLoader.load('machi.png', (t)=>{
-  t.encoding = THREE.sRGBEncoding; // r146
-  t.minFilter = THREE.LinearFilter;
-});
+// 写真背景テクスチャ
+const streetBgTex   = texLoader.load('machi.png',     (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
+const highlandBgTex = texLoader.load('hisyochi.png',  (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
+const nightBgTex    = texLoader.load('hisyochi1.png', (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
 
-// 草テクスチャ（HIGHLAND用）
-const grassTex = texLoader.load(
-  'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r146/examples/textures/terrain/grasslight-big.jpg',
-  (t)=>{ t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(24,24); }
-);
-
-// ---- 熱気/冷気の微粒子（もや） ----
+// ---- モヤ粒子（STREETのみ可視） ----
 const motes = makeMotes(260); scene.add(motes);
 
 // ---- 吹雪（白い丸パーティクル） ----
 const circleTex = makeCircleTexture(64);
 const snow = makeSnow(1400, circleTex);
-snow.visible = false; // DESCENTで強化して可視化
+snow.visible = false; // DESCENTで強化
 scene.add(snow);
 
 // GLTF（扉＆ベンチ）
@@ -199,10 +192,10 @@ function makeBench(){
   return group;
 }
 
-// ---------- 物語（鍾乳洞なし／HIGHLAND背景で統一） ----------
+// ---------- 物語（REALIZE削除／NIGHT新設） ----------
 const SCENES = {
-  STREET:'STREET', DOOR:'DOOR', HIGHLAND:'HIGHLAND',
-  REALIZE:'REALIZE', DESCENT:'DESCENT', ONEYEAR:'ONEYEAR', END:'END'
+  STREET:'STREET', DOOR:'DOOR', HIGHLAND:'HIGHLAND', NIGHT:'NIGHT',
+  DESCENT:'DESCENT', ONEYEAR:'ONEYEAR', END:'END'
 };
 
 const NARRATIVE = {
@@ -226,6 +219,8 @@ const NARRATIVE = {
 {t:"そこは灼熱の街ではなかった。眼前には高原の避暑地が広がっていた。"},
 {t:"木陰の下には涼やかな風、澄んだ小川がきらめき、岩にあたる水音が心地よい旋律のように響く。"},
 {t:"「涼しい……！」思わず声をあげ、疑念も恐怖も忘れて駆け回る。", s:"悠人"},
+],
+[SCENES.NIGHT]: [
 {t:"やがて夕暮れ。時計では数分しか経っていないのに、空は茜色に染まっていた。時間の感覚が狂っている。"},
 {t:"古びたパンフレットが目に留まる。〈避暑地案内〉 ― 扉は真夏の極暑の日にだけ開く。訪れた者は涼を得られる。ただし長居は禁物……"},
 {t:"― 戻る道はひとつ。次の夏、扉が開いたとき、現世の者を一人送り込むこと。 ― 入れ替わりは“縁ある者”に限る。"},
@@ -236,13 +231,6 @@ const NARRATIVE = {
 {t:"「中学生・佐々木美奈（14）、自宅で死亡。エアコン故障か」"},
 {t:"記事には続きがあった。「修理依頼は出されておらず、窓も開けられていなかったという」……それはもう、事故ではなかった。"},
 {t:"足元の小川は鏡のように静まり、まるで“境界”のようだ。"},
-],
-[SCENES.REALIZE]: [
-{t:"近くの初老の男が呟く。「昔は深くてな……渡るのに三日三晩かかったもんだ。今じゃ温暖化で水源が枯れて、ちょろっと跨ぐだけだ」"},
-{t:"「ほんと楽になったわよね」別の女が笑う。"},
-{t:"僕は理解した。かつては苦行を要した川も、今は知らぬ間に跨いでしまえる。――僕はもう、その境界を越えていたのだ。"},
-{t:"そして思い出す。背中を押されたときの冷たい手。あれは……孤独に逝った美奈だったのではないか。"},
-{t:"戸籍をたどっても身寄りはなく、“縁ある者”は僕と亮の二人だけ。なぜ僕だった？ なぜ亮ではなかった？"},
 ],
 [SCENES.DESCENT]: [
 {t:"避暑地は次第におかしくなっていく。冷気は鋭く肺を突き、風は骨の芯まで凍みる。陽は沈まず、薄暗さだけが永遠に続く。"},
@@ -270,16 +258,12 @@ const nextBtn = $('nextBtn'), prevBtn = $('prevBtn');
 const fpsEl = $('fps'), logEl = $('log'), sceneChip = $('sceneChip');
 const hintEl = $('hint');
 
-let order = [SCENES.STREET, SCENES.DOOR, SCENES.HIGHLAND, SCENES.REALIZE, SCENES.DESCENT, SCENES.ONEYEAR, SCENES.END];
+let order = [SCENES.STREET, SCENES.DOOR, SCENES.HIGHLAND, SCENES.NIGHT, SCENES.DESCENT, SCENES.ONEYEAR, SCENES.END];
 let curScene = order[0], lineIdx = 0;
 
 function setSceneLabel(){ sceneChip.textContent = `Scene: ${curScene}`; }
 function setLog(msg){ logEl.textContent = msg; }
-
-function setLine(entry){
-  speakerEl.textContent = entry.s ? `【${entry.s}】` : '';
-  textEl.textContent = entry.t;
-}
+function setLine(entry){ speakerEl.textContent = entry.s ? `【${entry.s}】` : ''; textEl.textContent = entry.t; }
 
 function advance(dir=+1){
   const arr = NARRATIVE[curScene];
@@ -303,75 +287,121 @@ nextBtn.onclick = ()=>advance(+1);
 prevBtn.onclick = ()=>advance(-1);
 renderer.domElement.addEventListener('pointerdown', ()=>{ if(hintEl) hintEl.remove(); });
 
-// ---------- シーン演出（STREETは写真背景） ----------
+// ---------- シーン演出 ----------
 function enterEffects(name){
   switch(name){
     case SCENES.STREET:  heatStreet(); break;
     case SCENES.DOOR:    doorCold(); cameraFly(new THREE.Vector3(0,1.4,3.2), new THREE.Vector3(0,1.1,-1.2)); break;
-    case SCENES.HIGHLAND:toHighland(); {
-      const p = benchObj ? benchObj.position : new THREE.Vector3(-1.4,0,-1.5);
-      cameraFly(new THREE.Vector3(p.x+2.8,1.2,p.z+4.0), new THREE.Vector3(p.x,0.9,p.z));
-      break;
-    }
-    case SCENES.REALIZE: deepenBlue(); break;
-    case SCENES.DESCENT: deepestCold(); startBlizzard(); break;
+    case SCENES.HIGHLAND:toHighland(); break;                       // 写真背景（hisyochi.png）
+    case SCENES.NIGHT:   toNight(); break;                           // 写真背景（hisyochi1.png）
+    case SCENES.DESCENT: descentStreetBlizzard(); startBlizzard(); break; // STREET見た目 + 吹雪
     case SCENES.ONEYEAR: returnDoor(); cameraFly(new THREE.Vector3(0,1.5,3.0), new THREE.Vector3(0,1.1,-1.3)); break;
     case SCENES.END:     fadeToBlack(); break;
   }
 }
 
+// STREET：写真背景 + 地面/モヤあり
 function heatStreet(){
-  setLog('灼熱の街：写真背景 + ヒートヘイズ');
-  scene.background = streetBgTex;           // ★ machi.png を背景に
+  setLog('灼熱の街：写真背景 + 地面/モヤ');
+  scene.background = streetBgTex;           // machi.png
   scene.fog.color.set(0x120b0a);
   scene.fog.density = 0.018;
+
+  ground.visible = true;
   ground.material.map = null; ground.material.color.set(0x18110f); ground.material.needsUpdate = true;
+
+  motes.visible  = true;
+  if(benchObj) benchObj.visible = false;
+  if(doorObj) doorObj.visible = false;
+
   key.intensity = 1.2; key.color.set(0xfff0c9);
   hemi.intensity = 0.6; hemi.color.set(0xffd8aa); hemi.groundColor.set(0x22150f);
-  if(doorObj) doorObj.visible=false; if(benchObj) benchObj.visible=false;
+
   snow.visible = false;
 }
+// DOOR：色背景（暗い青）に戻し、扉出現
 function doorCold(){
   setLog('冷たい扉が現れる');
-  scene.background = new THREE.Color(0x0c0f14);  // ← TextureからColorに戻す
+  scene.background = new THREE.Color(0x0c0f14);
   scene.fog.density = 0.022; scene.fog.color.set(0x0c0f14);
+
+  ground.visible = true;
+  motes.visible  = true;
+
   if(doorObj){
     doorObj.visible = true;
     if(doorObj.material){ doorObj.material.emissive = new THREE.Color(0x88aaff); doorObj.material.emissiveIntensity = 0.6; }
   }
-}
-function toHighland(){
-  setLog('高原の避暑地（背景統一）');
-  const bg = 0x0c1410;
-  scene.background = new THREE.Color(bg);   // ← Colorを直接代入
-  scene.fog.color.set(bg); scene.fog.density = 0.018;
+  if(benchObj) benchObj.visible = false;
 
-  ground.material.map = grassTex;
-  ground.material.color.set(0x1e3a23);
-  ground.material.roughness = 0.95;
-  ground.material.needsUpdate = true;
-
-  hemi.intensity = 0.65; hemi.color.set(0xb4ffd0); hemi.groundColor.set(0x1a2d1d);
-  key.intensity = 0.9; key.color.set(0xe9fff3);
-
-  if(benchObj) benchObj.visible = true;
+  key.intensity = 0.9; key.color.set(0xcfe9ff);
+  hemi.intensity = 0.55; hemi.color.set(0x9fefff); hemi.groundColor.set(0x0c0f14);
   snow.visible = false;
 }
-function deepenBlue(){
-  setLog('境界を越えた理解');
-  scene.fog.density = 0.028;
-  key.intensity = 0.8; key.color.set(0xbfdcff); hemi.intensity = 0.45;
+// HIGHLAND（昼）：写真だけ（地面/ベンチ/モヤOFF）
+function toHighland(){
+  setLog('高原（昼）：写真背景 hisyochi.png');
+  scene.background = highlandBgTex;
+  scene.fog.density = 0.0;
+
+  ground.visible = false;
+  motes.visible  = false;
+  if(benchObj) benchObj.visible = false;
+  if(doorObj) doorObj.visible = false;
+
+  hemi.intensity = 0.45; hemi.color.set(0xb4ffd0); hemi.groundColor.set(0x1a2d1d);
+  key.intensity  = 0.6;  key.color.set(0xe9fff3);
+
+  snow.visible = false;
 }
-function deepestCold(){
-  setLog('地獄の寒気');
-  scene.fog.density = 0.05; key.intensity = 0.5; hemi.intensity = 0.35;
-  key.color.set(0xbfdcff); if(doorObj) doorObj.visible=false;
+// NIGHT：写真だけ（夜の写真）
+function toNight(){
+  setLog('高原（夜）：写真背景 hisyochi1.png');
+  scene.background = nightBgTex;
+  scene.fog.density = 0.0;
+
+  ground.visible = false;
+  motes.visible  = false;
+  if(benchObj) benchObj.visible = false;
+  if(doorObj) doorObj.visible = false;
+
+  hemi.intensity = 0.35; hemi.color.set(0xa8d3ff); hemi.groundColor.set(0x142026);
+  key.intensity  = 0.4;  key.color.set(0xcfe5ff);
+
+  snow.visible = false;
 }
+// DESCENT：STREET見た目 + 吹雪
+function descentStreetBlizzard(){
+  setLog('地獄の寒気：街の地面 + 吹雪');
+  scene.background = streetBgTex;   // 街写真に戻す
+  scene.fog.color.set(0x0e0b10);
+  scene.fog.density = 0.035;
+
+  ground.visible = true;
+  ground.material.map = null; ground.material.color.set(0x111317); ground.material.needsUpdate = true;
+
+  motes.visible  = false;
+  if(benchObj) benchObj.visible = false;
+  if(doorObj)  doorObj.visible = false;
+
+  key.intensity = 0.6; key.color.set(0xbfdcff);
+  hemi.intensity = 0.4; hemi.color.set(0x9fb9ff); hemi.groundColor.set(0x0e0b10);
+}
+// ONEYEAR：街に戻り扉出現（雪はやむ）
 function returnDoor(){
-  setLog('一年後、扉は再び開く');
-  // 背景はHIGHLANDのまま継続
-  scene.fog.density = 0.028; key.intensity = 0.85; hemi.intensity = 0.5;
-  if(doorObj) doorObj.visible=true;
+  setLog('一年後：扉は再び開く（街）');
+  scene.background = streetBgTex;
+  scene.fog.density = 0.022; scene.fog.color.set(0x0c0f14);
+
+  ground.visible = true;
+  motes.visible  = true;
+
+  if(doorObj) doorObj.visible = true;
+  if(benchObj) benchObj.visible = false;
+
+  key.intensity = 0.85; key.color.set(0xe9f3ff);
+  hemi.intensity = 0.5; hemi.color.set(0xbad3ff); hemi.groundColor.set(0x0c0f14);
+
   snow.visible = false;
 }
 function fadeToBlack(){
@@ -388,7 +418,6 @@ function startBlizzard(){
   const p = snow.userData.params;
   p.windX = 3.2; p.fall = 6.0; p.turb = 4.0;
   snow.material.size = 0.14;
-  setLog('吹雪が一気に強くなる');
 }
 
 // Camera 微Tween
