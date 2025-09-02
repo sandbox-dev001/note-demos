@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>避暑地の扉 — Three.js r146（写真背景＆夜シーン）</title>
+<title>避暑地の扉 — Three.js r146（雷光＆写真除去）</title>
 <style>
   :root{ --bg:#07070a; --fg:#eaeef7; }
   html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;overflow:hidden}
@@ -51,10 +51,7 @@
 
 <script>
 // ================= ASSETS =================
-const ASSETS = {
-  doorModel: null,  // 'https://.../door.glb'
-  benchModel: null, // 'https://.../bench.glb'
-};
+const ASSETS = { doorModel:null, benchModel:null };
 // ==========================================
 
 // ---------- Three.js 基本セット ----------
@@ -62,6 +59,7 @@ const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputEncoding = THREE.sRGBEncoding; // r146
+renderer.toneMappingExposure = 1;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -192,7 +190,7 @@ function makeBench(){
   return group;
 }
 
-// ---------- 物語（REALIZE削除／NIGHT新設） ----------
+// ---------- 物語（NIGHT→DESCENT雷光、ONEYEAR/END写真無し） ----------
 const SCENES = {
   STREET:'STREET', DOOR:'DOOR', HIGHLAND:'HIGHLAND', NIGHT:'NIGHT',
   DESCENT:'DESCENT', ONEYEAR:'ONEYEAR', END:'END'
@@ -260,6 +258,7 @@ const hintEl = $('hint');
 
 let order = [SCENES.STREET, SCENES.DOOR, SCENES.HIGHLAND, SCENES.NIGHT, SCENES.DESCENT, SCENES.ONEYEAR, SCENES.END];
 let curScene = order[0], lineIdx = 0;
+let lastScene = null;           // ★ 直前のシーンを保持（雷光発火に使用）
 
 function setSceneLabel(){ sceneChip.textContent = `Scene: ${curScene}`; }
 function setLog(msg){ logEl.textContent = msg; }
@@ -274,7 +273,9 @@ function advance(dir=+1){
   }else{
     const idx = order.indexOf(curScene) + (dir>0?1:-1);
     if(idx>=0 && idx<order.length){
-      curScene = order[idx]; lineIdx = (dir>0?0:Math.max(0, NARRATIVE[curScene].length-1));
+      lastScene = curScene;                       // ★ 切替前に保存
+      curScene = order[idx];
+      lineIdx = (dir>0?0:Math.max(0, NARRATIVE[curScene].length-1));
       setSceneLabel(); setLine(NARRATIVE[curScene][lineIdx]);
       enterEffects(curScene, true);
     }else{
@@ -287,6 +288,19 @@ nextBtn.onclick = ()=>advance(+1);
 prevBtn.onclick = ()=>advance(-1);
 renderer.domElement.addEventListener('pointerdown', ()=>{ if(hintEl) hintEl.remove(); });
 
+// ---------- 雷光フラッシュ ----------
+const lightning = {
+  active:false, time:0, dur:0.35,
+  hemiBase:0.6, hemiPeak:1.9,
+  exposureBase:1.0, exposurePeak:1.8
+};
+function triggerLightning(){
+  lightning.active = true;
+  lightning.time = 0;
+  lightning.hemiBase = hemi.intensity;
+  lightning.exposureBase = renderer.toneMappingExposure;
+}
+
 // ---------- シーン演出 ----------
 function enterEffects(name){
   switch(name){
@@ -294,7 +308,9 @@ function enterEffects(name){
     case SCENES.DOOR:    doorCold(); cameraFly(new THREE.Vector3(0,1.4,3.2), new THREE.Vector3(0,1.1,-1.2)); break;
     case SCENES.HIGHLAND:toHighland(); break;         // 写真 hisyochi.png
     case SCENES.NIGHT:   toNight(); break;            // 写真 hisyochi1.png
-    case SCENES.DESCENT: descentColdNoPhoto(); startBlizzard(); break; // 写真なし＋地面＋吹雪
+    case SCENES.DESCENT:
+      if(lastScene === SCENES.NIGHT) triggerLightning();  // ★ 切替瞬間に雷光
+      descentColdNoPhoto(); startBlizzard(); break;       // 写真なし＋地面＋吹雪
     case SCENES.ONEYEAR: returnDoor(); cameraFly(new THREE.Vector3(0,1.5,3.0), new THREE.Vector3(0,1.1,-1.3)); break;
     case SCENES.END:     fadeToBlack(); break;
   }
@@ -304,10 +320,10 @@ function enterEffects(name){
 function heatStreet(){
   setLog('灼熱の街：写真のみ（地面/モヤなし）');
   scene.background = streetBgTex;           // machi.png
-  scene.fog.density = 0.0;                  // 写真時は霧オフ
+  scene.fog.density = 0.0;
 
-  ground.visible = false;                   // ★ 非表示
-  motes.visible  = false;                   // ★ 非表示
+  ground.visible = false;
+  motes.visible  = false;
   if(benchObj) benchObj.visible = false;
   if(doorObj) doorObj.visible = false;
 
@@ -384,10 +400,10 @@ function descentColdNoPhoto(){
   key.intensity = 0.6; key.color.set(0xbfdcff);
   hemi.intensity = 0.4; hemi.color.set(0x9fb9ff); hemi.groundColor.set(0x0a0f14);
 }
-// ONEYEAR：街に戻り扉出現（写真あり／このまま）
+// ONEYEAR：写真無し（色背景）＋扉再登場
 function returnDoor(){
-  setLog('一年後：扉は再び開く（街 写真あり）');
-  scene.background = streetBgTex;
+  setLog('一年後：扉は再び開く（写真なし）');
+  scene.background = new THREE.Color(0x0c0f14); // ★ 写真を使わない
   scene.fog.density = 0.022; scene.fog.color.set(0x0c0f14);
 
   ground.visible = true;
@@ -403,6 +419,7 @@ function returnDoor(){
 }
 function fadeToBlack(){
   setLog('終幕');
+  scene.background = new THREE.Color(0x000000); // ★ 写真を確実に無効化
   let t=0; (function fade(){
     t+=0.02; scene.fog.density = THREE.MathUtils.lerp(scene.fog.density, 0.12, 0.05);
     if(t<1.2) requestAnimationFrame(fade);
@@ -439,6 +456,22 @@ function loop(){
   requestAnimationFrame(loop);
   const dt = clock.getDelta();
   const t  = clock.elapsedTime;
+
+  // 雷光フラッシュ更新（指数減衰で元に戻す）
+  if(lightning.active){
+    lightning.time += dt;
+    const u = Math.min(lightning.time / lightning.dur, 1); // 0→1
+    const k = 1 - u;                   // 1→0
+    const w = k*k*(2 - k);             // easeOut-ish（鋭く減衰）
+    hemi.intensity = lightning.hemiBase + (lightning.hemiPeak - lightning.hemiBase) * w;
+    renderer.toneMappingExposure = lightning.exposureBase + (lightning.exposurePeak - lightning.exposureBase) * w;
+    if(u >= 1){
+      lightning.active = false;
+      hemi.intensity = lightning.hemiBase;
+      renderer.toneMappingExposure = lightning.exposureBase;
+    }
+  }
+
   updateMotes(t);
   updateSnow(t, dt);
   controls.update();
@@ -498,7 +531,7 @@ function updateSnow(t, dt){
 window.addEventListener('resize', ()=>{
   const w=innerWidth, h=innerHeight;
   renderer.setSize(w,h);
-　 camera.aspect = w/h;
+  camera.aspect = w/h;
   camera.updateProjectionMatrix();
 });
 document.addEventListener('keydown',(e)=>{
