@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>避暑地の扉 — Three.js r146（雷光＆写真除去）</title>
+<title>避暑地の扉 — Three.js r146（雷光＆テキスト整列）</title>
 <style>
   :root{ --bg:#07070a; --fg:#eaeef7; }
   html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;overflow:hidden}
@@ -12,15 +12,36 @@
   .top{position:absolute;left:12px;top:10px;right:12px;display:flex;gap:8px;align-items:center;opacity:.9}
   .chip{pointer-events:auto;border:1px solid #333;padding:6px 10px;border-radius:999px;font-size:12px;background:#1116}
   .log{margin-left:auto;font-size:12px;opacity:.75}
+
   .panel{position:absolute;left:0;right:0;bottom:0;padding:18px 16px 24px;background:linear-gradient(180deg,#0000,#000a 40%,#000e);pointer-events:auto}
-  .textbox{max-width:min(980px,92vw);margin:0 auto;padding:14px 18px;border:1px solid #222;border-radius:14px;background:#0b0d12cc;backdrop-filter:blur(6px);font-size:16px;line-height:1.9}
-  .speaker{opacity:.85;font-size:13px;margin-bottom:4px}
-  .controls{display:flex;gap:10px;justify-content:flex-end;margin-top:12px}
+  /* ▼テキストボックス：1行目を常に同位置にするためGrid化＆話者行を固定高に */
+  .textbox{
+    max-width:min(980px,92vw);
+    margin:0 auto;
+    padding:14px 18px;
+    border:1px solid #222;border-radius:14px;
+    background:#0b0d12cc;backdrop-filter:blur(6px);
+    font-size:16px;line-height:1.9;
+
+    display:grid;
+    grid-template-rows: 1.4em auto auto; /* 1行目=話者の固定高さ -> 以降の#text開始位置が常に一定 */
+    row-gap:10px;
+    align-items:start;
+  }
+  .speaker{
+    opacity:.85;font-size:13px;line-height:1.4em; /* 行高と固定トラックを一致 */
+    /* 話者が空でも高さを保持して1行目の基準を固定 */
+    min-height:1.4em;
+  }
+  #text{ margin:0; white-space:pre-wrap; word-break:break-word; }
+  .controls{display:flex;gap:10px;justify-content:flex-end}
   .btn{pointer-events:auto;border:1px solid #2a2a2a;background:#101318;padding:10px 16px;border-radius:12px;color:var(--fg);font-weight:600;letter-spacing:.02em;cursor:pointer;transition:.18s}
   .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px #0006}
+
   .vignette{position:fixed;inset:-3px;background:radial-gradient(ellipse at center,#0000 45%,#0004 70%,#0009 100%);pointer-events:none}
-  .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:12px;opacity:.6}
-  @media (max-width:600px){ .textbox{font-size:15px} }
+  @media (max-width:600px){
+    .textbox{font-size:15px; grid-template-rows: 1.4em auto auto;}
+  }
 </style>
 </head>
 <body>
@@ -42,7 +63,6 @@
   </div>
   <div class="vignette"></div>
 </div>
-<div class="hint" id="hint">クリック / タップで進む</div>
 
 <!-- Three.js r146（グローバル） -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
@@ -190,7 +210,7 @@ function makeBench(){
   return group;
 }
 
-// ---------- 物語（NIGHT→DESCENT雷光、ONEYEAR/END写真無し） ----------
+// ---------- 物語 ----------
 const SCENES = {
   STREET:'STREET', DOOR:'DOOR', HIGHLAND:'HIGHLAND', NIGHT:'NIGHT',
   DESCENT:'DESCENT', ONEYEAR:'ONEYEAR', END:'END'
@@ -254,11 +274,10 @@ const $ = id=>document.getElementById(id);
 const speakerEl = $('speaker'), textEl = $('text');
 const nextBtn = $('nextBtn'), prevBtn = $('prevBtn');
 const fpsEl = $('fps'), logEl = $('log'), sceneChip = $('sceneChip');
-const hintEl = $('hint');
 
 let order = [SCENES.STREET, SCENES.DOOR, SCENES.HIGHLAND, SCENES.NIGHT, SCENES.DESCENT, SCENES.ONEYEAR, SCENES.END];
 let curScene = order[0], lineIdx = 0;
-let lastScene = null;           // ★ 直前のシーンを保持（雷光発火に使用）
+let lastScene = null;           // 雷光発火に使用
 
 function setSceneLabel(){ sceneChip.textContent = `Scene: ${curScene}`; }
 function setLog(msg){ logEl.textContent = msg; }
@@ -273,7 +292,7 @@ function advance(dir=+1){
   }else{
     const idx = order.indexOf(curScene) + (dir>0?1:-1);
     if(idx>=0 && idx<order.length){
-      lastScene = curScene;                       // ★ 切替前に保存
+      lastScene = curScene;
       curScene = order[idx];
       lineIdx = (dir>0?0:Math.max(0, NARRATIVE[curScene].length-1));
       setSceneLabel(); setLine(NARRATIVE[curScene][lineIdx]);
@@ -286,7 +305,6 @@ function advance(dir=+1){
 
 nextBtn.onclick = ()=>advance(+1);
 prevBtn.onclick = ()=>advance(-1);
-renderer.domElement.addEventListener('pointerdown', ()=>{ if(hintEl) hintEl.remove(); });
 
 // ---------- 雷光フラッシュ ----------
 const lightning = {
@@ -309,8 +327,8 @@ function enterEffects(name){
     case SCENES.HIGHLAND:toHighland(); break;         // 写真 hisyochi.png
     case SCENES.NIGHT:   toNight(); break;            // 写真 hisyochi1.png
     case SCENES.DESCENT:
-      if(lastScene === SCENES.NIGHT) triggerLightning();  // ★ 切替瞬間に雷光
-      descentColdNoPhoto(); startBlizzard(); break;       // 写真なし＋地面＋吹雪
+      if(lastScene === SCENES.NIGHT) triggerLightning();
+      descentColdNoPhoto(); startBlizzard(); break;
     case SCENES.ONEYEAR: returnDoor(); cameraFly(new THREE.Vector3(0,1.5,3.0), new THREE.Vector3(0,1.1,-1.3)); break;
     case SCENES.END:     fadeToBlack(); break;
   }
@@ -403,7 +421,7 @@ function descentColdNoPhoto(){
 // ONEYEAR：写真無し（色背景）＋扉再登場
 function returnDoor(){
   setLog('一年後：扉は再び開く（写真なし）');
-  scene.background = new THREE.Color(0x0c0f14); // ★ 写真を使わない
+  scene.background = new THREE.Color(0x0c0f14);
   scene.fog.density = 0.022; scene.fog.color.set(0x0c0f14);
 
   ground.visible = true;
@@ -419,7 +437,7 @@ function returnDoor(){
 }
 function fadeToBlack(){
   setLog('終幕');
-  scene.background = new THREE.Color(0x000000); // ★ 写真を確実に無効化
+  scene.background = new THREE.Color(0x000000);
   let t=0; (function fade(){
     t+=0.02; scene.fog.density = THREE.MathUtils.lerp(scene.fog.density, 0.12, 0.05);
     if(t<1.2) requestAnimationFrame(fade);
@@ -457,12 +475,12 @@ function loop(){
   const dt = clock.getDelta();
   const t  = clock.elapsedTime;
 
-  // 雷光フラッシュ更新（指数減衰で元に戻す）
+  // 雷光フラッシュ更新
   if(lightning.active){
     lightning.time += dt;
-    const u = Math.min(lightning.time / lightning.dur, 1); // 0→1
-    const k = 1 - u;                   // 1→0
-    const w = k*k*(2 - k);             // easeOut-ish（鋭く減衰）
+    const u = Math.min(lightning.time / lightning.dur, 1);
+    const k = 1 - u;
+    const w = k*k*(2 - k);
     hemi.intensity = lightning.hemiBase + (lightning.hemiPeak - lightning.hemiBase) * w;
     renderer.toneMappingExposure = lightning.exposureBase + (lightning.exposurePeak - lightning.exposureBase) * w;
     if(u >= 1){
