@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>美しい3D宇宙空間（広大スケール＋距離制御キラキラ星＆宇宙船＆宇宙飛行士）</title>
+  <style>
+    body { margin: 0; overflow: hidden; background-color: black; }
+    canvas { display: block; }
+  </style>
+
+  <!-- Import Map: bare specifier を CDN の URL にマッピング -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js",
+      "three/": "https://cdn.jsdelivr.net/npm/three@0.150.1/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <script type="module">
+    import * as THREE         from 'three';
+    import { OrbitControls }  from 'three/examples/jsm/controls/OrbitControls.js';
+    import { GLTFLoader }     from 'three/examples/jsm/loaders/GLTFLoader.js';
+
+    // ── シーン／カメラ／レンダラー ─────────────────────────────
+    const scene    = new THREE.Scene();
+    const camera   = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      5000
+    );
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // ── カメラコントロール ────────────────────────────────────
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping   = true;
+    controls.dampingFactor   = 0.1;
+    controls.rotateSpeed     = 0.8;
+    controls.zoomSpeed       = 2.0;
+    controls.minDistance     = 5;
+    controls.maxDistance     = 2000;
+
+    // ── ライティング ─────────────────────────────────────────
+    const ambient = new THREE.AmbientLight(0x404050, 0.6);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(100, 100, 50);
+    scene.add(dirLight);
+    const point = new THREE.PointLight(0xccccff, 1.0, 500);
+    point.position.set(0, 50, 100);
+    scene.add(point);
+
+    // ── 背景の星空テクスチャ（球面） ─────────────────────────
+    const texLoader = new THREE.TextureLoader();
+    texLoader.load(
+      './starfield.jpg',
+      texture => {
+        const sky = new THREE.Mesh(
+          new THREE.SphereGeometry(3000, 64, 64),
+          new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide })
+        );
+        scene.add(sky);
+      },
+      undefined,
+      err => console.warn('星空テクスチャ読込失敗:', err)
+    );
+
+    // ── 小さなキラキラ星（メッシュ球モデル） ─────────────────────
+    const smallStars = new THREE.Group();
+    scene.add(smallStars);
+    const smallGeo = new THREE.SphereGeometry(0.2, 8, 8);
+    const smallMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const SMALL_COUNT = 6000;
+    for (let i = 0; i < SMALL_COUNT; i++) {
+      const star = new THREE.Mesh(smallGeo, smallMat);
+      star.position.set(
+        (Math.random() - 0.5) * 1000,
+        (Math.random() - 0.5) * 1000,
+        (Math.random() - 0.5) * 1000
+      );
+      star.userData.phase = Math.random() * Math.PI * 2;
+      smallStars.add(star);
+    }
+
+    // ── GLTF ローダー ─────────────────────────────────────────
+    const gltfLoader = new GLTFLoader();
+
+    // ■■ 外部参照用変数を先に宣言
+    let spaceship = null;
+    let astronaut = null;
+
+    // ── 大きな恒星モデルを一つ読み込んで配置 ─────────────────────
+    gltfLoader.load(
+      './sun.glb',
+      gltf => {
+        const sun = gltf.scene;
+        sun.name = 'sun';
+        sun.scale.set(3000, 3000, 3000);
+        sun.position.set(-9000, 200, -800);
+        scene.add(sun);
+      },
+      undefined,
+      err => console.error('恒星モデル読み込み失敗:', err)
+    );
+
+    // ── 宇宙船モデル読み込み ─────────────────────────────────
+    gltfLoader.load(
+      './spaceship.glb',
+      gltf => {
+        spaceship = gltf.scene;
+        spaceship.name     = 'spaceship';
+        spaceship.scale.set(10, 10, 10);
+        spaceship.position.set(0, 0, 0);
+        scene.add(spaceship);
+      },
+      undefined,
+      err => console.error('宇宙船モデル読み込み失敗:', err)
+    );
+
+    // ── 宇宙飛行士モデル読み込み ───────────────────────────────
+    gltfLoader.load(
+      './astronaut.glb',
+      gltf => {
+        astronaut = gltf.scene;
+        astronaut.name     = 'astronaut';
+        astronaut.scale.set(1, 1, 1);
+        astronaut.position.set(20, 25, 30);
+        astronaut.userData.initialY = astronaut.position.y;  // 初期Yを保持
+        astronaut.rotation.y = Math.PI;
+        scene.add(astronaut);
+      },
+      undefined,
+      err => console.error('宇宙飛行士モデル読み込み失敗:', err)
+    );
+
+    // ── カメラ初期位置 ─────────────────────────────────────────
+    camera.position.set(0, 0, 200);
+
+    // ── クロック ───────────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    // ── アニメーションループ ───────────────────────────────────
+    function animate() {
+      requestAnimationFrame(animate);
+      const t     = clock.getElapsedTime();
+      const delta = clock.getDelta();
+
+      // 宇宙船前方移動（モデル読み込みが完了してから）
+      if (spaceship) {
+        spaceship.position.z -= delta * 100;
+      }
+
+      // 宇宙飛行士上下揺れ
+      if (astronaut && astronaut.userData.initialY !== undefined) {
+        astronaut.position.y = astronaut.userData.initialY + Math.sin(t * 2) * 1;
+      }
+
+      // smallStars: 距離 > 200m のものだけキラキラ
+      smallStars.children.forEach(star => {
+        const d = camera.position.distanceTo(star.position);
+        if (d > 200) {
+          const s = 1 + 0.3 * Math.sin(t * 5 + star.userData.phase);
+          star.scale.setScalar(s);
+        } else {
+          star.scale.setScalar(1);
+        }
+      });
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ── リサイズ対応 ─────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
