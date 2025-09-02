@@ -1,188 +1,482 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <title>美しい3D宇宙空間（広大スケール＋距離制御キラキラ星＆宇宙船＆宇宙飛行士）</title>
-  <style>
-    body { margin: 0; overflow: hidden; background-color: black; }
-    canvas { display: block; }
-  </style>
-
-  <!-- Import Map: bare specifier を CDN の URL にマッピング -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js",
-      "three/": "https://cdn.jsdelivr.net/npm/three@0.150.1/"
-    }
-  }
-  </script>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>避暑地の扉 — Three.js r146（STREETに写真背景）</title>
+<style>
+  :root{ --bg:#07070a; --fg:#eaeef7; }
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;overflow:hidden}
+  canvas{display:block}
+  .hud{position:fixed;inset:0;pointer-events:none}
+  .top{position:absolute;left:12px;top:10px;right:12px;display:flex;gap:8px;align-items:center;opacity:.9}
+  .chip{pointer-events:auto;border:1px solid #333;padding:6px 10px;border-radius:999px;font-size:12px;background:#1116}
+  .log{margin-left:auto;font-size:12px;opacity:.75}
+  .panel{position:absolute;left:0;right:0;bottom:0;padding:18px 16px 24px;background:linear-gradient(180deg,#0000,#000a 40%,#000e);pointer-events:auto}
+  .textbox{max-width:min(980px,92vw);margin:0 auto;padding:14px 18px;border:1px solid #222;border-radius:14px;background:#0b0d12cc;backdrop-filter:blur(6px);font-size:16px;line-height:1.9}
+  .speaker{opacity:.85;font-size:13px;margin-bottom:4px}
+  .controls{display:flex;gap:10px;justify-content:flex-end;margin-top:12px}
+  .btn{pointer-events:auto;border:1px solid #2a2a2a;background:#101318;padding:10px 16px;border-radius:12px;color:var(--fg);font-weight:600;letter-spacing:.02em;cursor:pointer;transition:.18s}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px #0006}
+  .vignette{position:fixed;inset:-3px;background:radial-gradient(ellipse at center,#0000 45%,#0004 70%,#0009 100%);pointer-events:none}
+  .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:12px;opacity:.6}
+  @media (max-width:600px){ .textbox{font-size:15px} }
+</style>
 </head>
 <body>
-  <script type="module">
-    import * as THREE         from 'three';
-    import { OrbitControls }  from 'three/examples/jsm/controls/OrbitControls.js';
-    import { GLTFLoader }     from 'three/examples/jsm/loaders/GLTFLoader.js';
+<div class="hud">
+  <div class="top">
+    <div class="chip" id="sceneChip">Scene: --</div>
+    <div class="chip" id="fps">FPS: --</div>
+    <div class="log" id="log">読み込み中…</div>
+  </div>
+  <div class="panel">
+    <div class="textbox">
+      <div class="speaker" id="speaker"></div>
+      <div id="text"></div>
+      <div class="controls">
+        <button class="btn" id="prevBtn">◀ 戻る</button>
+        <button class="btn" id="nextBtn">次へ ▶</button>
+      </div>
+    </div>
+  </div>
+  <div class="vignette"></div>
+</div>
+<div class="hint" id="hint">クリック / タップで進む</div>
 
-    // ── シーン／カメラ／レンダラー ─────────────────────────────
-    const scene    = new THREE.Scene();
-    const camera   = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      5000
-    );
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+<!-- Three.js r146（グローバル） -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/loaders/GLTFLoader.js"></script>
 
-    // ── カメラコントロール ────────────────────────────────────
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping   = true;
-    controls.dampingFactor   = 0.1;
-    controls.rotateSpeed     = 0.8;
-    controls.zoomSpeed       = 2.0;
-    controls.minDistance     = 5;
-    controls.maxDistance     = 2000;
+<script>
+// ================= ASSETS（任意差し替え） =================
+const ASSETS = {
+  doorModel: null,  // 'https://.../door.glb'
+  benchModel: null, // 'https://.../bench.glb'
+};
+// =========================================================
 
-    // ── ライティング ─────────────────────────────────────────
-    const ambient = new THREE.AmbientLight(0x404050, 0.6);
-    scene.add(ambient);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(100, 100, 50);
-    scene.add(dirLight);
-    const point = new THREE.PointLight(0xccccff, 1.0, 500);
-    point.position.set(0, 50, 100);
-    scene.add(point);
+// ---------- Three.js 基本セット ----------
+const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding; // r146
+document.body.appendChild(renderer.domElement);
 
-    // ── 背景の星空テクスチャ（球面） ─────────────────────────
-    const texLoader = new THREE.TextureLoader();
-    texLoader.load(
-      './starfield.jpg',
-      texture => {
-        const sky = new THREE.Mesh(
-          new THREE.SphereGeometry(3000, 64, 64),
-          new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide })
-        );
-        scene.add(sky);
-      },
-      undefined,
-      err => console.warn('星空テクスチャ読込失敗:', err)
-    );
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x06070a);
+scene.fog = new THREE.FogExp2(0x06070a, 0.02);
 
-    // ── 小さなキラキラ星（メッシュ球モデル） ─────────────────────
-    const smallStars = new THREE.Group();
-    scene.add(smallStars);
-    const smallGeo = new THREE.SphereGeometry(0.2, 8, 8);
-    const smallMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const SMALL_COUNT = 6000;
-    for (let i = 0; i < SMALL_COUNT; i++) {
-      const star = new THREE.Mesh(smallGeo, smallMat);
-      star.position.set(
-        (Math.random() - 0.5) * 1000,
-        (Math.random() - 0.5) * 1000,
-        (Math.random() - 0.5) * 1000
-      );
-      star.userData.phase = Math.random() * Math.PI * 2;
-      smallStars.add(star);
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 200);
+camera.position.set(0, 1.6, 6);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.enablePan = false; controls.minDistance = 1.2; controls.maxDistance = 12;
+
+const clock = new THREE.Clock();
+
+// Lights
+const hemi = new THREE.HemisphereLight(0x7ea6ff, 0x101018, 0.6); scene.add(hemi);
+const key  = new THREE.DirectionalLight(0xffffff, 1.0); key.position.set(4,6,3); scene.add(key);
+
+// Ground（HIGHLANDで草テクスチャを適用）
+const groundMat = new THREE.MeshStandardMaterial({color:0x111317, roughness:0.98});
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(100,100), groundMat);
+ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
+
+// テクスチャローダ
+const texLoader = new THREE.TextureLoader();
+
+// STREET背景：machi.png（index.htmlと同じフォルダに配置）
+const streetBgTex = texLoader.load('machi.png', (t)=>{
+  t.encoding = THREE.sRGBEncoding; // r146
+  t.minFilter = THREE.LinearFilter;
+});
+
+// 草テクスチャ（HIGHLAND用）
+const grassTex = texLoader.load(
+  'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r146/examples/textures/terrain/grasslight-big.jpg',
+  (t)=>{ t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(24,24); }
+);
+
+// ---- 熱気/冷気の微粒子（もや） ----
+const motes = makeMotes(260); scene.add(motes);
+
+// ---- 吹雪（白い丸パーティクル） ----
+const circleTex = makeCircleTexture(64);
+const snow = makeSnow(1400, circleTex);
+snow.visible = false; // DESCENTで強化して可視化
+scene.add(snow);
+
+// GLTF（扉＆ベンチ）
+const loader = new THREE.GLTFLoader();
+let doorObj, benchObj;
+
+(async function ensureModels(){
+  if(ASSETS.doorModel){ doorObj = (await loadGLB(ASSETS.doorModel)).scene; }
+  else{ doorObj = new THREE.Mesh(new THREE.BoxGeometry(1,2,0.08), new THREE.MeshStandardMaterial({color:0xcad5ff, metalness:.1, roughness:.2, emissive:0x112244})); }
+  doorObj.position.set(0,1,-2); doorObj.visible = false; scene.add(doorObj);
+
+  if(ASSETS.benchModel){ benchObj = (await loadGLB(ASSETS.benchModel)).scene; }
+  else{ benchObj = makeBench(); }
+  benchObj.visible = false; scene.add(benchObj);
+})();
+
+function loadGLB(url){ return new Promise((res,rej)=> loader.load(url, res, undefined, rej)); }
+
+// ---------- 形状ユーティリティ ----------
+function makeMotes(n=200){
+  const geo = new THREE.BufferGeometry();
+  const arr = new Float32Array(n*3);
+  for(let i=0;i<n;i++){
+    const r = Math.random()*16+2, a = Math.random()*Math.PI*2;
+    arr[i*3+0] = Math.cos(a)*r;
+    arr[i*3+1] = Math.random()*2.4 + .2;
+    arr[i*3+2] = Math.sin(a)*r;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(arr,3));
+  return new THREE.Points(geo, new THREE.PointsMaterial({size:0.04, transparent:true, opacity:.6, depthWrite:false}));
+}
+
+function makeCircleTexture(size=64){
+  const c = document.createElement('canvas'); c.width=c.height=size;
+  const ctx = c.getContext('2d');
+  const r = size*0.45, cx = size/2, cy = size/2;
+  const g = ctx.createRadialGradient(cx, cy, r*0.2, cx, cy, r);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.6, 'rgba(255,255,255,0.85)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.clearRect(0,0,size,size);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+  return tex;
+}
+
+function makeSnow(count=1200, mapTex){
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count*3);
+  const vel = new Float32Array(count*3);
+  const R = 22;
+  for(let i=0;i<count;i++){
+    const a = Math.random()*Math.PI*2;
+    const r = Math.sqrt(Math.random())*R;
+    pos[i*3+0] = Math.cos(a)*r;
+    pos[i*3+2] = Math.sin(a)*r;
+    pos[i*3+1] = Math.random()*8 + 2;
+    vel[i*3+0] = (Math.random()*0.2-0.1);
+    vel[i*3+1] = -(Math.random()*0.6+0.4);
+    vel[i*3+2] = (Math.random()*0.2-0.1);
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.userData.vel = vel;
+  const mat = new THREE.PointsMaterial({
+    size: 0.08,
+    map: mapTex,
+    transparent: true,
+    alphaTest: 0.08,
+    opacity: 0.95,
+    depthWrite: false
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.userData.params = { windX: 0.4, fall: 0.8, turb: 0.8 };
+  return pts;
+}
+
+function makeBench(){
+  const group = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({color:0x6c553a, roughness:.8});
+  const metal= new THREE.MeshStandardMaterial({color:0x555, metalness:.7, roughness:.4});
+  for(let i=0;i<4;i++){
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(1.4,0.08,0.22), wood);
+    plank.position.set(0,0.5+i*0.09,-0.2); group.add(plank);
+  }
+  const legGeo = new THREE.CylinderGeometry(0.03,0.03,0.6,12);
+  const l1 = new THREE.Mesh(legGeo, metal); l1.position.set(-0.55,0.3,-0.3);
+  const l2 = l1.clone(); l2.position.x=0.55; group.add(l1,l2);
+  group.position.set(-1.4,0,-1.5);
+  return group;
+}
+
+// ---------- 物語（鍾乳洞なし／HIGHLAND背景で統一） ----------
+const SCENES = {
+  STREET:'STREET', DOOR:'DOOR', HIGHLAND:'HIGHLAND',
+  REALIZE:'REALIZE', DESCENT:'DESCENT', ONEYEAR:'ONEYEAR', END:'END'
+};
+
+const NARRATIVE = {
+[SCENES.STREET]: [
+{t:"僕の名前は佐藤悠人（さとう・ゆうと）。十五歳の夏、あの日の暑さを、僕は一生忘れられない。", s:"悠人"},
+{t:"夏休みの最終日、親友の中村亮（なかむら・りょう）と一緒に、部活帰りに本屋へ寄る予定だった。"},
+{t:"去年までは、もう一人そこにいた。僕と亮がそろって好意を寄せていた女子――佐々木美奈（ささき・みな）。"},
+{t:"けれど彼女は昨夏、熱中症で突然亡くなった。取り合いの末に失ってしまった存在。僕と亮はまた友人として並ぶようになったが、気まずさは残った。"},
+{t:"その日は異常だった。アスファルトは歪み、街路樹の影すら役に立たない。気温は40度を超え、蝉の声さえ狂気じみて聞こえた。"},
+{t:"「悠人、先にコンビニ寄って飲み物買ってくるわ。喉が死にそう」", s:"亮"},
+{t:"「わかった。じゃあ本屋の前で集合な」", s:"悠人"},
+],
+[SCENES.DOOR]: [
+{t:"ふと横の路地に白い靄がゆらめく。そこだけ空気が冷えているように見えた。"},
+{t:"――ひんやりとした風。冷たい扉が、そこに立っていた。"},
+{t:"扉の周りには涼を求める人だかりができ、皆、吸い寄せられるように近づき、開くのを待っている。"},
+{t:"僕も一歩踏み出しかけて、ふと足が止まる。背後から「早く行けよ！」という怒鳴り声。"},
+{t:"ギィィ……と音を立て、扉がひとりでに開いた。次の瞬間、ドンッ！ 背中を強く押され、僕は中へ吸い込まれた。最後に感じたのは――背中に触れた手の、異様な冷たさだった。"},
+],
+[SCENES.HIGHLAND]: [
+{t:"そこは灼熱の街ではなかった。眼前には高原の避暑地が広がっていた。"},
+{t:"木陰の下には涼やかな風、澄んだ小川がきらめき、岩にあたる水音が心地よい旋律のように響く。"},
+{t:"「涼しい……！」思わず声をあげ、疑念も恐怖も忘れて駆け回る。", s:"悠人"},
+{t:"やがて夕暮れ。時計では数分しか経っていないのに、空は茜色に染まっていた。時間の感覚が狂っている。"},
+{t:"古びたパンフレットが目に留まる。〈避暑地案内〉 ― 扉は真夏の極暑の日にだけ開く。訪れた者は涼を得られる。ただし長居は禁物……"},
+{t:"― 戻る道はひとつ。次の夏、扉が開いたとき、現世の者を一人送り込むこと。 ― 入れ替わりは“縁ある者”に限る。"},
+{t:"掲示板には古びた紙が何枚も貼られていた。〈冥府新報・過去記事抜粋〉"},
+{t:"「高校生・川村明彦（17）、部活動中に倒れ死亡」"},
+{t:"「主婦・長谷川絹子（42）、帰宅途中に路上で倒れ死亡」"},
+{t:"「会社員・斎藤真司（32）、河川敷で意識失い死亡」"},
+{t:"「中学生・佐々木美奈（14）、自宅で死亡。エアコン故障か」"},
+{t:"記事には続きがあった。「修理依頼は出されておらず、窓も開けられていなかったという」……それはもう、事故ではなかった。"},
+{t:"足元の小川は鏡のように静まり、まるで“境界”のようだ。"},
+],
+[SCENES.REALIZE]: [
+{t:"近くの初老の男が呟く。「昔は深くてな……渡るのに三日三晩かかったもんだ。今じゃ温暖化で水源が枯れて、ちょろっと跨ぐだけだ」"},
+{t:"「ほんと楽になったわよね」別の女が笑う。"},
+{t:"僕は理解した。かつては苦行を要した川も、今は知らぬ間に跨いでしまえる。――僕はもう、その境界を越えていたのだ。"},
+{t:"そして思い出す。背中を押されたときの冷たい手。あれは……孤独に逝った美奈だったのではないか。"},
+{t:"戸籍をたどっても身寄りはなく、“縁ある者”は僕と亮の二人だけ。なぜ僕だった？ なぜ亮ではなかった？"},
+],
+[SCENES.DESCENT]: [
+{t:"避暑地は次第におかしくなっていく。冷気は鋭く肺を突き、風は骨の芯まで凍みる。陽は沈まず、薄暗さだけが永遠に続く。"},
+{t:"心地よさは偽りで、この場所は地獄だった。耐え難い寒さと暗闇に、心は削られていく。"},
+{t:"悪いと分かっていても、罪悪感は次第に薄れていく――戻りたい。美奈の真意を確かめたい。誰かを、代わりに。"},
+{t:"頭の奥で、美奈の声が囁く。「どっちも選べなかった」", s:"美奈の声"},
+{t:"親の顔。妹の笑顔。亮との日々。誰か一人を思い浮かべるたび、心臓を握りつぶされるような苦しみが走る。"},
+{t:"いっそ、自分がここで凍りつけばいいのかもしれない。だが、冷気はいずれ正気を奪ってしまう。"},
+],
+[SCENES.ONEYEAR]: [
+{t:"――一年が経った。扉が再び開く。"},
+{t:"そこには、汗だくで路地に迷い込んだ懐かしい姿があった。"},
+{t:"僕はゆっくりと手を伸ばす。掌に触れる、確かな温もり。"},
+{t:"その温もりは、かつて僕が守りたかった誰かのものと同じだった。けれど次の夏には、もう別の誰かのものになっているのだろう。"},
+],
+[SCENES.END]: [
+{t:"――END――"}
+]
+};
+
+// ---------- UI ----------
+const $ = id=>document.getElementById(id);
+const speakerEl = $('speaker'), textEl = $('text');
+const nextBtn = $('nextBtn'), prevBtn = $('prevBtn');
+const fpsEl = $('fps'), logEl = $('log'), sceneChip = $('sceneChip');
+const hintEl = $('hint');
+
+let order = [SCENES.STREET, SCENES.DOOR, SCENES.HIGHLAND, SCENES.REALIZE, SCENES.DESCENT, SCENES.ONEYEAR, SCENES.END];
+let curScene = order[0], lineIdx = 0;
+
+function setSceneLabel(){ sceneChip.textContent = `Scene: ${curScene}`; }
+function setLog(msg){ logEl.textContent = msg; }
+
+function setLine(entry){
+  speakerEl.textContent = entry.s ? `【${entry.s}】` : '';
+  textEl.textContent = entry.t;
+}
+
+function advance(dir=+1){
+  const arr = NARRATIVE[curScene];
+  lineIdx += dir;
+  if(lineIdx>=0 && lineIdx<arr.length){
+    setLine(arr[lineIdx]);
+    if(lineIdx===0 && dir>0) enterEffects(curScene, true);
+  }else{
+    const idx = order.indexOf(curScene) + (dir>0?1:-1);
+    if(idx>=0 && idx<order.length){
+      curScene = order[idx]; lineIdx = (dir>0?0:Math.max(0, NARRATIVE[curScene].length-1));
+      setSceneLabel(); setLine(NARRATIVE[curScene][lineIdx]);
+      enterEffects(curScene, true);
+    }else{
+      lineIdx = Math.max(0, Math.min(arr.length-1, lineIdx));
     }
+  }
+}
 
-    // ── GLTF ローダー ─────────────────────────────────────────
-    const gltfLoader = new GLTFLoader();
+nextBtn.onclick = ()=>advance(+1);
+prevBtn.onclick = ()=>advance(-1);
+renderer.domElement.addEventListener('pointerdown', ()=>{ if(hintEl) hintEl.remove(); });
 
-    // ■■ 外部参照用変数を先に宣言
-    let spaceship = null;
-    let astronaut = null;
-
-    // ── 大きな恒星モデルを一つ読み込んで配置 ─────────────────────
-    gltfLoader.load(
-      './sun.glb',
-      gltf => {
-        const sun = gltf.scene;
-        sun.name = 'sun';
-        sun.scale.set(3000, 3000, 3000);
-        sun.position.set(-9000, 200, -800);
-        scene.add(sun);
-      },
-      undefined,
-      err => console.error('恒星モデル読み込み失敗:', err)
-    );
-
-    // ── 宇宙船モデル読み込み ─────────────────────────────────
-    gltfLoader.load(
-      './spaceship.glb',
-      gltf => {
-        spaceship = gltf.scene;
-        spaceship.name     = 'spaceship';
-        spaceship.scale.set(10, 10, 10);
-        spaceship.position.set(0, 0, 0);
-        scene.add(spaceship);
-      },
-      undefined,
-      err => console.error('宇宙船モデル読み込み失敗:', err)
-    );
-
-    // ── 宇宙飛行士モデル読み込み ───────────────────────────────
-    gltfLoader.load(
-      './astronaut.glb',
-      gltf => {
-        astronaut = gltf.scene;
-        astronaut.name     = 'astronaut';
-        astronaut.scale.set(1, 1, 1);
-        astronaut.position.set(20, 25, 30);
-        astronaut.userData.initialY = astronaut.position.y;  // 初期Yを保持
-        astronaut.rotation.y = Math.PI;
-        scene.add(astronaut);
-      },
-      undefined,
-      err => console.error('宇宙飛行士モデル読み込み失敗:', err)
-    );
-
-    // ── カメラ初期位置 ─────────────────────────────────────────
-    camera.position.set(0, 0, 200);
-
-    // ── クロック ───────────────────────────────────────────────
-    const clock = new THREE.Clock();
-
-    // ── アニメーションループ ───────────────────────────────────
-    function animate() {
-      requestAnimationFrame(animate);
-      const t     = clock.getElapsedTime();
-      const delta = clock.getDelta();
-
-      // 宇宙船前方移動（モデル読み込みが完了してから）
-      if (spaceship) {
-        spaceship.position.z -= delta * 100;
-      }
-
-      // 宇宙飛行士上下揺れ
-      if (astronaut && astronaut.userData.initialY !== undefined) {
-        astronaut.position.y = astronaut.userData.initialY + Math.sin(t * 2) * 1;
-      }
-
-      // smallStars: 距離 > 200m のものだけキラキラ
-      smallStars.children.forEach(star => {
-        const d = camera.position.distanceTo(star.position);
-        if (d > 200) {
-          const s = 1 + 0.3 * Math.sin(t * 5 + star.userData.phase);
-          star.scale.setScalar(s);
-        } else {
-          star.scale.setScalar(1);
-        }
-      });
-
-      controls.update();
-      renderer.render(scene, camera);
+// ---------- シーン演出（STREETは写真背景） ----------
+function enterEffects(name){
+  switch(name){
+    case SCENES.STREET:  heatStreet(); break;
+    case SCENES.DOOR:    doorCold(); cameraFly(new THREE.Vector3(0,1.4,3.2), new THREE.Vector3(0,1.1,-1.2)); break;
+    case SCENES.HIGHLAND:toHighland(); {
+      const p = benchObj ? benchObj.position : new THREE.Vector3(-1.4,0,-1.5);
+      cameraFly(new THREE.Vector3(p.x+2.8,1.2,p.z+4.0), new THREE.Vector3(p.x,0.9,p.z));
+      break;
     }
-    animate();
+    case SCENES.REALIZE: deepenBlue(); break;
+    case SCENES.DESCENT: deepestCold(); startBlizzard(); break;
+    case SCENES.ONEYEAR: returnDoor(); cameraFly(new THREE.Vector3(0,1.5,3.0), new THREE.Vector3(0,1.1,-1.3)); break;
+    case SCENES.END:     fadeToBlack(); break;
+  }
+}
 
-    // ── リサイズ対応 ─────────────────────────────────────────
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-  </script>
+function heatStreet(){
+  setLog('灼熱の街：写真背景 + ヒートヘイズ');
+  scene.background = streetBgTex;           // ★ machi.png を背景に
+  scene.fog.color.set(0x120b0a);
+  scene.fog.density = 0.018;
+  ground.material.map = null; ground.material.color.set(0x18110f); ground.material.needsUpdate = true;
+  key.intensity = 1.2; key.color.set(0xfff0c9);
+  hemi.intensity = 0.6; hemi.color.set(0xffd8aa); hemi.groundColor.set(0x22150f);
+  if(doorObj) doorObj.visible=false; if(benchObj) benchObj.visible=false;
+  snow.visible = false;
+}
+function doorCold(){
+  setLog('冷たい扉が現れる');
+  scene.background = new THREE.Color(0x0c0f14);  // ← TextureからColorに戻す
+  scene.fog.density = 0.022; scene.fog.color.set(0x0c0f14);
+  if(doorObj){
+    doorObj.visible = true;
+    if(doorObj.material){ doorObj.material.emissive = new THREE.Color(0x88aaff); doorObj.material.emissiveIntensity = 0.6; }
+  }
+}
+function toHighland(){
+  setLog('高原の避暑地（背景統一）');
+  const bg = 0x0c1410;
+  scene.background = new THREE.Color(bg);   // ← Colorを直接代入
+  scene.fog.color.set(bg); scene.fog.density = 0.018;
+
+  ground.material.map = grassTex;
+  ground.material.color.set(0x1e3a23);
+  ground.material.roughness = 0.95;
+  ground.material.needsUpdate = true;
+
+  hemi.intensity = 0.65; hemi.color.set(0xb4ffd0); hemi.groundColor.set(0x1a2d1d);
+  key.intensity = 0.9; key.color.set(0xe9fff3);
+
+  if(benchObj) benchObj.visible = true;
+  snow.visible = false;
+}
+function deepenBlue(){
+  setLog('境界を越えた理解');
+  scene.fog.density = 0.028;
+  key.intensity = 0.8; key.color.set(0xbfdcff); hemi.intensity = 0.45;
+}
+function deepestCold(){
+  setLog('地獄の寒気');
+  scene.fog.density = 0.05; key.intensity = 0.5; hemi.intensity = 0.35;
+  key.color.set(0xbfdcff); if(doorObj) doorObj.visible=false;
+}
+function returnDoor(){
+  setLog('一年後、扉は再び開く');
+  // 背景はHIGHLANDのまま継続
+  scene.fog.density = 0.028; key.intensity = 0.85; hemi.intensity = 0.5;
+  if(doorObj) doorObj.visible=true;
+  snow.visible = false;
+}
+function fadeToBlack(){
+  setLog('終幕');
+  let t=0; (function fade(){
+    t+=0.02; scene.fog.density = THREE.MathUtils.lerp(scene.fog.density, 0.12, 0.05);
+    if(t<1.2) requestAnimationFrame(fade);
+  })();
+}
+
+// ---- 吹雪開始（強度一気盛り） ----
+function startBlizzard(){
+  snow.visible = true;
+  const p = snow.userData.params;
+  p.windX = 3.2; p.fall = 6.0; p.turb = 4.0;
+  snow.material.size = 0.14;
+  setLog('吹雪が一気に強くなる');
+}
+
+// Camera 微Tween
+let camTween=null;
+function cameraFly(pos, look){
+  const startP = camera.position.clone(), startT = controls.target.clone();
+  const endP = pos.clone(), endT = look.clone(); const dur = 1.2; let t=0;
+  camTween = function run(){
+    const dt=clock.getDelta(); t+=dt; const k=Math.min(1,t/dur); const e=ease(k);
+    camera.position.lerpVectors(startP,endP,e); controls.target.lerpVectors(startT,endT,e);
+    if(k<1) requestAnimationFrame(camTween); else camTween=null;
+  }; requestAnimationFrame(camTween);
+}
+function ease(x){ return x<0.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2; }
+
+// ---------- 進行開始 ----------
+setSceneLabel(); setLine(NARRATIVE[curScene][0]); enterEffects(curScene);
+
+// ---------- ループ ----------
+let lastMeter = 0;
+function loop(){
+  requestAnimationFrame(loop);
+  const dt = clock.getDelta();
+  const t  = clock.elapsedTime;
+  updateMotes(t);
+  updateSnow(t, dt);
+  controls.update();
+  renderer.render(scene,camera);
+
+  const now = performance.now();
+  if(now-lastMeter>500){
+    const fps = (1/dt).toFixed(0);
+    fpsEl.textContent = `FPS: ${fps}`; lastMeter = now;
+  }
+}
+loop();
+
+function updateMotes(t){
+  const pos = motes.geometry.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const ix=i*3, x=pos.array[ix], y=pos.array[ix+1], z=pos.array[ix+2];
+    const mode = (curScene===SCENES.STREET||curScene===SCENES.DOOR)?'HOT':'COLD';
+    const w = mode==='HOT' ? Math.sin(t*2.0 + x*1.1 + z*0.8)*0.006 : Math.sin(t*0.7 + x*0.6 + z*0.5)*0.003;
+    pos.array[ix+1] = y + w;
+  }
+  pos.needsUpdate = true;
+}
+
+function updateSnow(t, dt){
+  if(!snow.visible) return;
+  const geo = snow.geometry;
+  const pos = geo.attributes.position.array;
+  const vel = geo.userData.vel;
+  const p   = snow.userData.params;
+  const R = 24;
+
+  for(let i=0;i<vel.length/3;i++){
+    const i3 = i*3;
+    const turbX = (Math.sin(t*1.7 + pos[i3+2]*0.12 + i*0.13))*p.turb*0.3;
+    const turbZ = (Math.cos(t*1.3 + pos[i3]*0.11 + i*0.17))*p.turb*0.25;
+
+    pos[i3+0] += (vel[i3+0] + p.windX*0.6 + turbX) * dt;
+    pos[i3+1] += (vel[i3+1] - p.fall) * dt;
+    pos[i3+2] += (vel[i3+2] + turbZ) * dt;
+
+    if(pos[i3+1] < -0.5){
+      const a = Math.random()*Math.PI*2;
+      const r = Math.sqrt(Math.random())*R;
+      pos[i3+0] = Math.cos(a)*r;
+      pos[i3+2] = Math.sin(a)*r;
+      pos[i3+1] = Math.random()*6 + 4;
+      vel[i3+0] = (Math.random()*0.2-0.1);
+      vel[i3+1] = -(Math.random()*0.6+0.4);
+      vel[i3+2] = (Math.random()*0.2-0.1);
+    }
+  }
+  geo.attributes.position.needsUpdate = true;
+}
+
+// ---------- 入出力 ----------
+window.addEventListener('resize', ()=>{
+  const w=innerWidth, h=innerHeight;
+  renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
+});
+document.addEventListener('keydown',(e)=>{
+  if(e.key==='ArrowRight'||e.key===' '){ advance(+1); }
+  if(e.key==='ArrowLeft'){ advance(-1); }
+});
+</script>
 </body>
 </html>
