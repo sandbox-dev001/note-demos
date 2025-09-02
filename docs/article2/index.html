@@ -80,7 +80,7 @@ const clock = new THREE.Clock();
 const hemi = new THREE.HemisphereLight(0x7ea6ff, 0x101018, 0.6); scene.add(hemi);
 const key  = new THREE.DirectionalLight(0xffffff, 1.0); key.position.set(4,6,3); scene.add(key);
 
-// Ground（STREET/DESCENTで使用）
+// Ground（STREETでは非表示。DESCENT/DOOR/ONEYEARで使用）
 const groundMat = new THREE.MeshStandardMaterial({color:0x111317, roughness:0.98});
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(100,100), groundMat);
 ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; scene.add(ground);
@@ -93,7 +93,7 @@ const streetBgTex   = texLoader.load('machi.png',     (t)=>{ t.encoding=THREE.sR
 const highlandBgTex = texLoader.load('hisyochi.png',  (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
 const nightBgTex    = texLoader.load('hisyochi1.png', (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
 
-// ---- モヤ粒子（STREETのみ可視） ----
+// ---- モヤ粒子（STREETでは非表示） ----
 const motes = makeMotes(260); scene.add(motes);
 
 // ---- 吹雪（白い丸パーティクル） ----
@@ -292,34 +292,31 @@ function enterEffects(name){
   switch(name){
     case SCENES.STREET:  heatStreet(); break;
     case SCENES.DOOR:    doorCold(); cameraFly(new THREE.Vector3(0,1.4,3.2), new THREE.Vector3(0,1.1,-1.2)); break;
-    case SCENES.HIGHLAND:toHighland(); break;                       // 写真背景（hisyochi.png）
-    case SCENES.NIGHT:   toNight(); break;                           // 写真背景（hisyochi1.png）
-    case SCENES.DESCENT: descentStreetBlizzard(); startBlizzard(); break; // STREET見た目 + 吹雪
+    case SCENES.HIGHLAND:toHighland(); break;         // 写真 hisyochi.png
+    case SCENES.NIGHT:   toNight(); break;            // 写真 hisyochi1.png
+    case SCENES.DESCENT: descentColdNoPhoto(); startBlizzard(); break; // 写真なし＋地面＋吹雪
     case SCENES.ONEYEAR: returnDoor(); cameraFly(new THREE.Vector3(0,1.5,3.0), new THREE.Vector3(0,1.1,-1.3)); break;
     case SCENES.END:     fadeToBlack(); break;
   }
 }
 
-// STREET：写真背景 + 地面/モヤあり
+// STREET：写真のみ（地面/モヤなし）
 function heatStreet(){
-  setLog('灼熱の街：写真背景 + 地面/モヤ');
+  setLog('灼熱の街：写真のみ（地面/モヤなし）');
   scene.background = streetBgTex;           // machi.png
-  scene.fog.color.set(0x120b0a);
-  scene.fog.density = 0.018;
+  scene.fog.density = 0.0;                  // 写真時は霧オフ
 
-  ground.visible = true;
-  ground.material.map = null; ground.material.color.set(0x18110f); ground.material.needsUpdate = true;
-
-  motes.visible  = true;
+  ground.visible = false;                   // ★ 非表示
+  motes.visible  = false;                   // ★ 非表示
   if(benchObj) benchObj.visible = false;
   if(doorObj) doorObj.visible = false;
 
-  key.intensity = 1.2; key.color.set(0xfff0c9);
-  hemi.intensity = 0.6; hemi.color.set(0xffd8aa); hemi.groundColor.set(0x22150f);
+  key.intensity = 1.0; key.color.set(0xfff0c9);
+  hemi.intensity = 0.5; hemi.color.set(0xffd8aa); hemi.groundColor.set(0x22150f);
 
   snow.visible = false;
 }
-// DOOR：色背景（暗い青）に戻し、扉出現
+// DOOR：色背景に戻し、地面/モヤ有効＋扉出現
 function doorCold(){
   setLog('冷たい扉が現れる');
   scene.background = new THREE.Color(0x0c0f14);
@@ -370,26 +367,26 @@ function toNight(){
 
   snow.visible = false;
 }
-// DESCENT：STREET見た目 + 吹雪
-function descentStreetBlizzard(){
-  setLog('地獄の寒気：街の地面 + 吹雪');
-  scene.background = streetBgTex;   // 街写真に戻す
-  scene.fog.color.set(0x0e0b10);
-  scene.fog.density = 0.035;
+// DESCENT：写真は使わず、色背景＋地面＋吹雪
+function descentColdNoPhoto(){
+  setLog('地獄の寒気：写真なし（色背景）＋地面＋吹雪');
+  scene.background = new THREE.Color(0x081018); // 冷たい暗青
+  scene.fog.color.set(0x0a0f14);
+  scene.fog.density = 0.04;
 
   ground.visible = true;
-  ground.material.map = null; ground.material.color.set(0x111317); ground.material.needsUpdate = true;
+  ground.material.map = null; ground.material.color.set(0x0f1418); ground.material.needsUpdate = true;
 
   motes.visible  = false;
   if(benchObj) benchObj.visible = false;
   if(doorObj)  doorObj.visible = false;
 
   key.intensity = 0.6; key.color.set(0xbfdcff);
-  hemi.intensity = 0.4; hemi.color.set(0x9fb9ff); hemi.groundColor.set(0x0e0b10);
+  hemi.intensity = 0.4; hemi.color.set(0x9fb9ff); hemi.groundColor.set(0x0a0f14);
 }
-// ONEYEAR：街に戻り扉出現（雪はやむ）
+// ONEYEAR：街に戻り扉出現（写真あり／このまま）
 function returnDoor(){
-  setLog('一年後：扉は再び開く（街）');
+  setLog('一年後：扉は再び開く（街 写真あり）');
   scene.background = streetBgTex;
   scene.fog.density = 0.022; scene.fog.color.set(0x0c0f14);
 
@@ -500,7 +497,9 @@ function updateSnow(t, dt){
 // ---------- 入出力 ----------
 window.addEventListener('resize', ()=>{
   const w=innerWidth, h=innerHeight;
-  renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h);
+　 camera.aspect = w/h;
+  camera.updateProjectionMatrix();
 });
 document.addEventListener('keydown',(e)=>{
   if(e.key==='ArrowRight'||e.key===' '){ advance(+1); }
