@@ -2,9 +2,8 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<!-- モバイルの拡大・視差ズレ抑止 -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>避暑地の扉 — Three.js r146（モバイル二重発火修正）</title>
+<title>避暑地の扉 — Three.js r146（モバイル入力修正・ドア位置・半透明UI）</title>
 <style>
   :root{ --bg:#07070a; --fg:#eaeef7; }
   html,body{
@@ -13,7 +12,7 @@
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
     overflow:hidden;
     overscroll-behavior:none;
-    touch-action:none; /* スワイプ判定は自前で */
+    touch-action:none;                 /* 自前ジェスチャ */
     -webkit-user-select:none; user-select:none;
     -webkit-tap-highlight-color:transparent;
   }
@@ -21,7 +20,7 @@
 
   /* レイヤー：canvas(0) < tapAll(1) < HUD(3) */
   .hud{position:fixed;inset:0;pointer-events:none; z-index:3;}
-  #tapAll{position:fixed;inset:0; z-index:1; pointer-events:auto;}
+  #tapAll{position:fixed;inset:0; z-index:1; pointer-events:auto;} /* 全画面タップ用 */
 
   .top{position:absolute;left:12px;top:10px;right:12px;display:flex;gap:8px;align-items:center;opacity:.9}
   .chip{pointer-events:auto;border:1px solid #333;padding:6px 10px;border-radius:999px;font-size:12px;background:#1116}
@@ -35,7 +34,7 @@
   .panel{
     position:absolute;left:0;right:0;bottom:0;
     padding:18px 16px 24px;
-    background:linear-gradient(180deg,#0000,#000a 40%,#000e);
+    background:linear-gradient(180deg,#0000,#0006 40%,#0009);
     pointer-events:auto;
     z-index:3;
   }
@@ -43,8 +42,11 @@
     max-width:min(980px,92vw);
     margin:0 auto;
     padding:14px 18px;
-    border:1px solid #222;border-radius:14px;
-    background:#0b0d12cc;backdrop-filter:blur(6px);
+    border:1px solid #1b1f28;border-radius:14px;
+    background:rgba(11,13,18,.55);          /* 半透明 */
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow:0 8px 24px rgba(0,0,0,.25);
     font-size:16px;line-height:1.9;
 
     display:grid;
@@ -59,9 +61,9 @@
   .controls{display:flex;gap:14px;justify-content:flex-end}
   .btn{
     pointer-events:auto;border:1px solid #2a2a2a;background:#101318;
-    padding:14px 20px;border-radius:14px;color:var(--fg);
+    padding:16px 24px;border-radius:14px;color:var(--fg);
     font-weight:600;letter-spacing:.02em;cursor:pointer;transition:.18s;
-    font-size:18px;min-height:44px;
+    font-size:18px;min-height:48px;
     -webkit-user-select:none; user-select:none;
     touch-action:none;
   }
@@ -70,7 +72,6 @@
   .vignette{position:fixed;inset:-3px;background:radial-gradient(ellipse at center,#0000 45%,#0004 70%,#0009 100%);pointer-events:none; z-index:2;}
   @media (max-width:600px){
     .textbox{font-size:15px; grid-template-rows: 1.4em auto auto;}
-    .btn{padding:16px 24px; font-size:18px; min-height:48px;}
   }
 </style>
 </head>
@@ -163,8 +164,8 @@ let doorObj, doorPivot, benchObj;
     );
   }
   doorPivot = new THREE.Group();
-  doorPivot.position.set(0,1,-2);
-  doorObj.position.set(0.5, 0, 0); // 左ヒンジ（右ヒンジは -0.5）
+  doorPivot.position.set(-0.45, 1, -2);    // ★ ドアのX位置 = -0.45（指定）
+  doorObj.position.set(0.5, 0, 0);         // 左ヒンジ（右ヒンジにしたい時は -0.5）
   doorPivot.add(doorObj);
   doorPivot.visible = false;
   scene.add(doorPivot);
@@ -321,17 +322,18 @@ function setSceneLabel(){ sceneChip.textContent = `Scene: ${curScene}`; }
 function setLog(msg){ logEl.textContent = msg; }
 function setLine(entry){ speakerEl.textContent = entry.s ? `【${entry.s}】` : ''; textEl.textContent = entry.t; }
 
-// ---------- 進む／戻る（デバウンス付き） ----------
+// ---------- ナビ（デバウンス） ----------
 let lastNavAt = 0;
 function navDebounce(fn){
   const now = performance.now();
-  if(now - lastNavAt < 250) return;
+  if(now - lastNavAt < 220) return;
   lastNavAt = now;
   fn();
 }
 function goNext(){ navDebounce(()=>advance(+1)); }
 function goPrev(){ navDebounce(()=>advance(-1)); }
 
+// ---------- 進む／戻る ----------
 function advance(dir=+1){
   const arr = NARRATIVE[curScene];
   const goingForward = dir > 0;
@@ -375,24 +377,24 @@ function advance(dir=+1){
   }
 }
 
-// ボタンは通常のclickでOK（パネル/全画面のtouchはガード）
-nextBtn.addEventListener('click', goNext);
-prevBtn.addEventListener('click', goPrev);
-
-// ======== タップ/スワイプ入力（click重複を止める）========
+// ---------- 入力（Pointerに一本化） ----------
 let tsX=0, tsY=0, t0=0;
-function onTS(e){
-  const t=(e.changedTouches?e.changedTouches[0]:e);
-  tsX=t.clientX; tsY=t.clientY; t0=performance.now();
+function isFromButton(e){
+  const path = e.composedPath ? e.composedPath() : [];
+  return path.some(el => el && el.classList && el.classList.contains('btn'));
 }
-function onTE(e){
-  // 合成click防止
+function onPD(e){
+  const t = e;
+  tsX = t.clientX; tsY = t.clientY; t0 = performance.now();
+}
+function onPU(e, origin){
   if(e.cancelable) e.preventDefault();
-  const t=(e.changedTouches?e.changedTouches[0]:e);
-  const dx=t.clientX-tsX, dy=t.clientY-tsY, dt=performance.now()-t0;
+  // ボタン由来はここでは処理しない
+  if(isFromButton(e)) return;
 
-  // ボタンを押していたら無視
-  if(e.target && e.target.closest && e.target.closest('.btn')) return;
+  const dx = e.clientX - tsX;
+  const dy = e.clientY - tsY;
+  const dt = performance.now() - t0;
 
   if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){
     dx<0 ? goNext() : goPrev();
@@ -400,18 +402,15 @@ function onTE(e){
     goNext();
   }
 }
+// 全画面とパネルで pointer を監視（click/touch は使わない）
+tapAll.addEventListener('pointerdown', onPD);
+tapAll.addEventListener('pointerup',   (e)=>onPU(e,'all'));
+panelEl.addEventListener('pointerdown', onPD);
+panelEl.addEventListener('pointerup',   (e)=>onPU(e,'panel'));
 
-// 全画面とパネルに pointer/touch を設定（clickは使わない）
-tapAll.addEventListener('touchstart', onTS, {passive:true});
-tapAll.addEventListener('touchend',   onTE, {passive:false});
-panelEl.addEventListener('touchstart', onTS, {passive:true});
-panelEl.addEventListener('touchend',   onTE, {passive:false});
-
-// マウス対応（PC用）
-tapAll.addEventListener('pointerdown', onTS);
-tapAll.addEventListener('pointerup',   onTE);
-panelEl.addEventListener('pointerdown', onTS);
-panelEl.addEventListener('pointerup',   onTE);
+// ボタンは専用の pointerup で確実に制御（バブリング停止）
+nextBtn.addEventListener('pointerup', (e)=>{ e.stopPropagation(); if(e.cancelable) e.preventDefault(); goNext(); });
+prevBtn.addEventListener('pointerup', (e)=>{ e.stopPropagation(); if(e.cancelable) e.preventDefault(); goPrev(); });
 
 // ---------- 雷光フラッシュ ----------
 const lightning = { active:false, time:0, dur:0.35, hemiBase:0.6, hemiPeak:1.9, exposureBase:1.0, exposurePeak:1.8 };
@@ -593,7 +592,7 @@ function ease(x){ return x<0.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2; }
 function cameraPunchToDoor(){
   const startP = camera.position.clone();
   const startT = controls.target.clone();
-  const dpos = doorPivot ? doorPivot.position : new THREE.Vector3(0,1,-2);
+  const dpos = doorPivot ? doorPivot.position : new THREE.Vector3(-0.45,1,-2);
   const endP = new THREE.Vector3(dpos.x, dpos.y + 0.25, dpos.z + 1.4);
   const endT = new THREE.Vector3(dpos.x, dpos.y + 0.1,  dpos.z);
   const durMs  = 550, t0 = performance.now();
