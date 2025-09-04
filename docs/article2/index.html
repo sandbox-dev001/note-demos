@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <!-- モバイルの拡大・視差ズレ抑止 -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>避暑地の扉 — Three.js r146（全画面タップ対応 + 一年後開扉 修正）</title>
+<title>避暑地の扉 — Three.js r146（モバイル二重発火修正）</title>
 <style>
   :root{ --bg:#07070a; --fg:#eaeef7; }
   html,body{
@@ -13,7 +13,7 @@
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
     overflow:hidden;
     overscroll-behavior:none;
-    touch-action:none;
+    touch-action:none; /* スワイプ判定は自前で */
     -webkit-user-select:none; user-select:none;
     -webkit-tap-highlight-color:transparent;
   }
@@ -163,8 +163,8 @@ let doorObj, doorPivot, benchObj;
     );
   }
   doorPivot = new THREE.Group();
-  doorPivot.position.set(-0.45,1,-2); // 扉の設置座標（横に動かすなら x を変更）
-  doorObj.position.set(0.5, 0, 0); // 左ヒンジ（右ヒンジなら -0.5）
+  doorPivot.position.set(0,1,-2);
+  doorObj.position.set(0.5, 0, 0); // 左ヒンジ（右ヒンジは -0.5）
   doorPivot.add(doorObj);
   doorPivot.visible = false;
   scene.add(doorPivot);
@@ -321,13 +321,20 @@ function setSceneLabel(){ sceneChip.textContent = `Scene: ${curScene}`; }
 function setLog(msg){ logEl.textContent = msg; }
 function setLine(entry){ speakerEl.textContent = entry.s ? `【${entry.s}】` : ''; textEl.textContent = entry.t; }
 
-// ---------- 進む／戻る ----------
-function goNext(){ advance(+1); }
-function goPrev(){ advance(-1); }
+// ---------- 進む／戻る（デバウンス付き） ----------
+let lastNavAt = 0;
+function navDebounce(fn){
+  const now = performance.now();
+  if(now - lastNavAt < 250) return;
+  lastNavAt = now;
+  fn();
+}
+function goNext(){ navDebounce(()=>advance(+1)); }
+function goPrev(){ navDebounce(()=>advance(-1)); }
 
 function advance(dir=+1){
   const arr = NARRATIVE[curScene];
-  const goingForward = dir > 0; // 進む/戻る
+  const goingForward = dir > 0;
   lineIdx += dir;
 
   if(lineIdx>=0 && lineIdx<arr.length){
@@ -342,13 +349,11 @@ function advance(dir=+1){
         cameraPunchToDoor();
       }
     }
-
     // ONEYEAR：1行目テキストで開扉（進む時のみ）
     if(curScene===SCENES.ONEYEAR && goingForward){
       const line = arr[lineIdx]?.t || "";
       if(line.includes("扉が再び開く")) openDoor();
     }
-
   }else{
     const idx = order.indexOf(curScene) + (goingForward?1:-1);
     if(idx>=0 && idx<order.length){
@@ -358,12 +363,11 @@ function advance(dir=+1){
       setSceneLabel(); setLine(NARRATIVE[curScene][lineIdx]);
       enterEffects(curScene, true);
 
-      // ★ シーン切替直後（行0）の一年後オープンを前進時のみ発火
+      // シーン切替直後（行0）の一年後オープンを前進時のみ発火
       if(goingForward && curScene===SCENES.ONEYEAR){
         const first = NARRATIVE[curScene][lineIdx]?.t || "";
         if(first.includes("扉が再び開く")) openDoor();
       }
-
       window.scrollTo(0,0);
     }else{
       lineIdx = Math.max(0, Math.min(arr.length-1, lineIdx));
@@ -371,23 +375,43 @@ function advance(dir=+1){
   }
 }
 
-nextBtn.onclick = goNext;
-prevBtn.onclick = goPrev;
+// ボタンは通常のclickでOK（パネル/全画面のtouchはガード）
+nextBtn.addEventListener('click', goNext);
+prevBtn.addEventListener('click', goPrev);
 
-// 全画面タップ＆スワイプ
-tapAll.addEventListener('click', goNext);
-panelEl.addEventListener('click', (e)=>{ if(!e.target.closest('.btn')) goNext(); });
+// ======== タップ/スワイプ入力（click重複を止める）========
 let tsX=0, tsY=0, t0=0;
-function onTS(e){ const t=e.changedTouches[0]; tsX=t.clientX; tsY=t.clientY; t0=performance.now(); }
-function onTE(e){
-  const t=e.changedTouches[0], dx=t.clientX-tsX, dy=t.clientY-tsY, dt=performance.now()-t0;
-  if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){ dx<0 ? goNext() : goPrev(); }
-  else if(dt<300 && Math.abs(dx)<10 && Math.abs(dy)<10){ goNext(); }
+function onTS(e){
+  const t=(e.changedTouches?e.changedTouches[0]:e);
+  tsX=t.clientX; tsY=t.clientY; t0=performance.now();
 }
+function onTE(e){
+  // 合成click防止
+  if(e.cancelable) e.preventDefault();
+  const t=(e.changedTouches?e.changedTouches[0]:e);
+  const dx=t.clientX-tsX, dy=t.clientY-tsY, dt=performance.now()-t0;
+
+  // ボタンを押していたら無視
+  if(e.target && e.target.closest && e.target.closest('.btn')) return;
+
+  if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){
+    dx<0 ? goNext() : goPrev();
+  }else if(dt<300 && Math.abs(dx)<10 && Math.abs(dy)<10){
+    goNext();
+  }
+}
+
+// 全画面とパネルに pointer/touch を設定（clickは使わない）
 tapAll.addEventListener('touchstart', onTS, {passive:true});
-tapAll.addEventListener('touchend', onTE, {passive:true});
+tapAll.addEventListener('touchend',   onTE, {passive:false});
 panelEl.addEventListener('touchstart', onTS, {passive:true});
-panelEl.addEventListener('touchend', onTE, {passive:true});
+panelEl.addEventListener('touchend',   onTE, {passive:false});
+
+// マウス対応（PC用）
+tapAll.addEventListener('pointerdown', onTS);
+tapAll.addEventListener('pointerup',   onTE);
+panelEl.addEventListener('pointerdown', onTS);
+panelEl.addEventListener('pointerup',   onTE);
 
 // ---------- 雷光フラッシュ ----------
 const lightning = { active:false, time:0, dur:0.35, hemiBase:0.6, hemiPeak:1.9, exposureBase:1.0, exposurePeak:1.8 };
@@ -525,7 +549,7 @@ function openDoor(){
   const start = performance.now();
   const dur = 800;
   const from = 0;
-  const to   = -Math.PI * 2/3; // -120°（右ヒンジなら +Math.PI*2/3）
+  const to   = -Math.PI * 2/3; // -120°
 
   if(doorObj && doorObj.material) doorObj.material.emissiveIntensity = 0.9;
 
@@ -569,10 +593,10 @@ function ease(x){ return x<0.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2; }
 function cameraPunchToDoor(){
   const startP = camera.position.clone();
   const startT = controls.target.clone();
-  const endP = new THREE.Vector3(0, 1.25, -0.6);
-  const endT = new THREE.Vector3(0, 1.1, -2.0);
-  const durMs  = 550;
-  const t0 = performance.now();
+  const dpos = doorPivot ? doorPivot.position : new THREE.Vector3(0,1,-2);
+  const endP = new THREE.Vector3(dpos.x, dpos.y + 0.25, dpos.z + 1.4);
+  const endT = new THREE.Vector3(dpos.x, dpos.y + 0.1,  dpos.z);
+  const durMs  = 550, t0 = performance.now();
   const prevEnabled = controls.enabled;
   controls.enabled = false;
 
