@@ -13,8 +13,13 @@
   .chip{pointer-events:auto;border:1px solid #333;padding:6px 10px;border-radius:999px;font-size:12px;background:#1116}
   .log{margin-left:auto;font-size:12px;opacity:.75}
 
+  /* ▼右上類を非表示 */
+  #sceneChip{ display:none; }
+  #fps{ display:none; }
+  #log{ display:none; }
+
   .panel{position:absolute;left:0;right:0;bottom:0;padding:18px 16px 24px;background:linear-gradient(180deg,#0000,#000a 40%,#000e);pointer-events:auto}
-  /* ▼テキストボックス：1行目を常に同位置にするためGrid化＆話者行を固定高に */
+  /* ▼テキストボックス（1行目の基準を固定） */
   .textbox{
     max-width:min(980px,92vw);
     margin:0 auto;
@@ -24,23 +29,27 @@
     font-size:16px;line-height:1.9;
 
     display:grid;
-    grid-template-rows: 1.4em auto auto; /* 1行目=話者の固定高さ -> 以降の#text開始位置が常に一定 */
+    grid-template-rows: 1.4em auto auto;
     row-gap:10px;
     align-items:start;
   }
-  .speaker{
-    opacity:.85;font-size:13px;line-height:1.4em; /* 行高と固定トラックを一致 */
-    /* 話者が空でも高さを保持して1行目の基準を固定 */
-    min-height:1.4em;
-  }
+  .speaker{ opacity:.85;font-size:13px;line-height:1.4em; min-height:1.4em; }
   #text{ margin:0; white-space:pre-wrap; word-break:break-word; }
-  .controls{display:flex;gap:10px;justify-content:flex-end}
-  .btn{pointer-events:auto;border:1px solid #2a2a2a;background:#101318;padding:10px 16px;border-radius:12px;color:var(--fg);font-weight:600;letter-spacing:.02em;cursor:pointer;transition:.18s}
+
+  .controls{display:flex;gap:14px;justify-content:flex-end}
+  /* ▼スマホで押しやすいサイズに大型化 */
+  .btn{
+    pointer-events:auto;border:1px solid #2a2a2a;background:#101318;
+    padding:14px 20px;border-radius:14px;color:var(--fg);
+    font-weight:600;letter-spacing:.02em;cursor:pointer;transition:.18s;
+    font-size:18px;min-height:44px;
+  }
   .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px #0006}
 
   .vignette{position:fixed;inset:-3px;background:radial-gradient(ellipse at center,#0000 45%,#0004 70%,#0009 100%);pointer-events:none}
   @media (max-width:600px){
     .textbox{font-size:15px; grid-template-rows: 1.4em auto auto;}
+    .btn{padding:16px 24px; font-size:18px; min-height:48px;}
   }
 </style>
 </head>
@@ -110,7 +119,7 @@ const texLoader = new THREE.TextureLoader();
 const streetBgTex   = texLoader.load('machi.png',     (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
 const highlandBgTex = texLoader.load('hisyochi.png',  (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
 const nightBgTex    = texLoader.load('hisyochi1.png', (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
-const descentBgTex  = texLoader.load('hisyochi2.png', (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; }); /* 追加 */
+const descentBgTex  = texLoader.load('hisyochi2.png', (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
 
 // ---- モヤ粒子（STREETでは非表示） ----
 const motes = makeMotes(260); scene.add(motes);
@@ -290,6 +299,11 @@ function advance(dir=+1){
   if(lineIdx>=0 && lineIdx<arr.length){
     setLine(arr[lineIdx]);
     if(lineIdx===0 && dir>0) enterEffects(curScene, true);
+
+    // ▼DOOR の最後の行（ギィィ……）で扉へパンチイン
+    if(curScene===SCENES.DOOR && lineIdx === NARRATIVE[SCENES.DOOR].length - 1){
+      cameraPunchToDoor();
+    }
   }else{
     const idx = order.indexOf(curScene) + (dir>0?1:-1);
     if(idx>=0 && idx<order.length){
@@ -402,14 +416,14 @@ function toNight(){
 
   snow.visible = false;
 }
-// DESCENT：写真は使わず、色背景＋地面＋吹雪
+// DESCENT：写真（hisyochi2.png）＋吹雪（地面は非表示）
 function descentColdNoPhoto(){
-  setLog('地獄の寒気：写真なし（色背景）＋地面＋吹雪');
-  scene.background = descentBgTex; // ← hisyochi2.png を背景に使用
+  setLog('地獄の寒気：写真（hisyochi2.png）＋吹雪');
+  scene.background = descentBgTex; // 背景に写真を使用
   scene.fog.color.set(0x0a0f14);
   scene.fog.density = 0.04;
 
-  ground.visible = true;
+  ground.visible = false; // 地面を消す
   ground.material.map = null; ground.material.color.set(0x0f1418); ground.material.needsUpdate = true;
 
   motes.visible  = false;
@@ -466,6 +480,32 @@ function cameraFly(pos, look){
 }
 function ease(x){ return x<0.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2; }
 
+// ---- 扉へパンチイン（ギィィ……の行で発火） ----
+function cameraPunchToDoor(){
+  const startP = camera.position.clone();
+  const startT = controls.target.clone();
+  const endP = new THREE.Vector3(0, 1.25, -0.6); // 扉手前
+  const endT = new THREE.Vector3(0, 1.1, -2.0);  // 扉中心を見る
+  const durMs  = 550;
+  const t0 = performance.now();
+  const prevEnabled = controls.enabled;
+  controls.enabled = false; // OrbitControls の更新を止める
+
+  function run(){
+    const u = Math.min(1, (performance.now() - t0) / durMs);
+    const e = 1 - Math.pow(1 - u, 3); // easeOutCubic
+    camera.position.lerpVectors(startP, endP, e);
+    controls.target.lerpVectors(startT, endT, e);
+    if(u < 1){
+      requestAnimationFrame(run);
+    } else {
+      controls.enabled = prevEnabled;
+      if (doorObj) doorObj.visible = false; // ← パンチイン完了後に扉を消す
+    }
+  }
+  requestAnimationFrame(run);
+}
+
 // ---------- 進行開始 ----------
 setSceneLabel(); setLine(NARRATIVE[curScene][0]); enterEffects(curScene);
 
@@ -493,7 +533,7 @@ function loop(){
 
   updateMotes(t);
   updateSnow(t, dt);
-  controls.update();
+  if(controls.enabled) controls.update();
   renderer.render(scene,camera);
 
   const now = performance.now();
