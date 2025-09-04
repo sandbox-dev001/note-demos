@@ -2,24 +2,50 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>避暑地の扉</title>
+<!-- モバイルの拡大・視差ズレ抑止 -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>避暑地の扉 — Three.js r146（全画面タップ対応）</title>
 <style>
   :root{ --bg:#07070a; --fg:#eaeef7; }
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;overflow:hidden}
-  canvas{display:block}
-  .hud{position:fixed;inset:0;pointer-events:none}
+  html,body{
+    margin:0;height:100%;
+    background:var(--bg);color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    overflow:hidden;
+    /* 画面ズレ・スワイプ戻り・選択ハイライト無効化 */
+    overscroll-behavior:none;
+    touch-action:none;
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  canvas{
+    display:block;
+    /* ダブルタップ拡大抑止（保険） */
+    touch-action:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+
+  /* レイヤー：canvas(0) < tapAll(1) < HUD(3) */
+  .hud{position:fixed;inset:0;pointer-events:none; z-index:3;}
+  #tapAll{position:fixed;inset:0; z-index:1; pointer-events:auto;}
+
   .top{position:absolute;left:12px;top:10px;right:12px;display:flex;gap:8px;align-items:center;opacity:.9}
   .chip{pointer-events:auto;border:1px solid #333;padding:6px 10px;border-radius:999px;font-size:12px;background:#1116}
   .log{margin-left:auto;font-size:12px;opacity:.75}
 
-  /* ▼右上類を非表示 */
+  /* 右上類を非表示 */
   #sceneChip{ display:none; }
   #fps{ display:none; }
   #log{ display:none; }
 
-  .panel{position:absolute;left:0;right:0;bottom:0;padding:18px 16px 24px;background:linear-gradient(180deg,#0000,#000a 40%,#000e);pointer-events:auto}
-  /* ▼テキストボックス（1行目の基準を固定） */
+  .panel{
+    position:absolute;left:0;right:0;bottom:0;
+    padding:18px 16px 24px;
+    background:linear-gradient(180deg,#0000,#000a 40%,#000e);
+    pointer-events:auto; /* パネルもタップ可（ボタン優先） */
+    z-index:3;
+  }
+  /* テキストボックス（1行目の基準を固定） */
   .textbox{
     max-width:min(980px,92vw);
     margin:0 auto;
@@ -32,21 +58,24 @@
     grid-template-rows: 1.4em auto auto;
     row-gap:10px;
     align-items:start;
+    -webkit-user-select:none; user-select:none; /* テキスト選択でズレ防止 */
   }
   .speaker{ opacity:.85;font-size:13px;line-height:1.4em; min-height:1.4em; }
   #text{ margin:0; white-space:pre-wrap; word-break:break-word; }
 
   .controls{display:flex;gap:14px;justify-content:flex-end}
-  /* ▼スマホで押しやすいサイズに大型化 */
+  /* スマホで押しやすいサイズに大型化 */
   .btn{
     pointer-events:auto;border:1px solid #2a2a2a;background:#101318;
     padding:14px 20px;border-radius:14px;color:var(--fg);
     font-weight:600;letter-spacing:.02em;cursor:pointer;transition:.18s;
     font-size:18px;min-height:44px;
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
   }
   .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px #0006}
 
-  .vignette{position:fixed;inset:-3px;background:radial-gradient(ellipse at center,#0000 45%,#0004 70%,#0009 100%);pointer-events:none}
+  .vignette{position:fixed;inset:-3px;background:radial-gradient(ellipse at center,#0000 45%,#0004 70%,#0009 100%);pointer-events:none; z-index:2;}
   @media (max-width:600px){
     .textbox{font-size:15px; grid-template-rows: 1.4em auto auto;}
     .btn{padding:16px 24px; font-size:18px; min-height:48px;}
@@ -54,6 +83,9 @@
 </style>
 </head>
 <body>
+<!-- 全画面タップゾーン（パネルより下層） -->
+<div id="tapAll" aria-hidden="true"></div>
+
 <div class="hud">
   <div class="top">
     <div class="chip" id="sceneChip">Scene: --</div>
@@ -132,12 +164,24 @@ scene.add(snow);
 
 // GLTF（扉＆ベンチ）
 const loader = new THREE.GLTFLoader();
-let doorObj, benchObj;
+let doorObj, doorPivot, benchObj;
 
 (async function ensureModels(){
   if(ASSETS.doorModel){ doorObj = (await loadGLB(ASSETS.doorModel)).scene; }
-  else{ doorObj = new THREE.Mesh(new THREE.BoxGeometry(1,2,0.08), new THREE.MeshStandardMaterial({color:0xcad5ff, metalness:.1, roughness:.2, emissive:0x112244})); }
-  doorObj.position.set(0,1,-2); doorObj.visible = false; scene.add(doorObj);
+  else{
+    doorObj = new THREE.Mesh(
+      new THREE.BoxGeometry(1,2,0.08),
+      new THREE.MeshStandardMaterial({color:0xcad5ff, metalness:.1, roughness:.2, emissive:0x112244})
+    );
+  }
+  // ヒンジ用の親
+  doorPivot = new THREE.Group();
+  doorPivot.position.set(-0.45,1,-2);   // 扉の設置座標
+  // 扉の幅=1想定 → ヒンジから半分ずらす
+  doorObj.position.set(0.5, 0, 0);
+  doorPivot.add(doorObj);
+  doorPivot.visible = false;
+  scene.add(doorPivot);
 
   if(ASSETS.benchModel){ benchObj = (await loadGLB(ASSETS.benchModel)).scene; }
   else{ benchObj = makeBench(); }
@@ -287,6 +331,8 @@ const $ = id=>document.getElementById(id);
 const speakerEl = $('speaker'), textEl = $('text');
 const nextBtn = $('nextBtn'), prevBtn = $('prevBtn');
 const fpsEl = $('fps'), logEl = $('log'), sceneChip = $('sceneChip');
+const tapAll = $('tapAll');
+const panelEl = document.querySelector('.panel');
 
 let order = [SCENES.STREET, SCENES.DOOR, SCENES.HIGHLAND, SCENES.NIGHT, SCENES.DESCENT, SCENES.ONEYEAR, SCENES.END];
 let curScene = order[0], lineIdx = 0;
@@ -296,6 +342,10 @@ function setSceneLabel(){ sceneChip.textContent = `Scene: ${curScene}`; }
 function setLog(msg){ logEl.textContent = msg; }
 function setLine(entry){ speakerEl.textContent = entry.s ? `【${entry.s}】` : ''; textEl.textContent = entry.t; }
 
+// ---------- 進む／戻る ----------
+function goNext(){ advance(+1); }
+function goPrev(){ advance(-1); }
+
 function advance(dir=+1){
   const arr = NARRATIVE[curScene];
   lineIdx += dir;
@@ -303,7 +353,12 @@ function advance(dir=+1){
     setLine(arr[lineIdx]);
     if(lineIdx===0 && dir>0) enterEffects(curScene, true);
 
-    // ▼DOOR の最後の行（ギィィ……）で扉へパンチイン
+    // DOOR：「ギィィ……」の行で開扉
+    if(curScene===SCENES.DOOR){
+      const line = arr[lineIdx]?.t || "";
+      if(line.includes("ギィィ")) openDoor();
+    }
+    // DOOR の「最後から2行目」で扉へパンチイン（= 吸い込まれる）
     if(curScene===SCENES.DOOR && lineIdx === NARRATIVE[SCENES.DOOR].length - 2){
       cameraPunchToDoor();
     }
@@ -315,14 +370,37 @@ function advance(dir=+1){
       lineIdx = (dir>0?0:Math.max(0, NARRATIVE[curScene].length-1));
       setSceneLabel(); setLine(NARRATIVE[curScene][lineIdx]);
       enterEffects(curScene, true);
+      window.scrollTo(0,0); // 念のため毎遷移で戻す
     }else{
       lineIdx = Math.max(0, Math.min(arr.length-1, lineIdx));
     }
   }
 }
 
-nextBtn.onclick = ()=>advance(+1);
-prevBtn.onclick = ()=>advance(-1);
+nextBtn.onclick = goNext;
+prevBtn.onclick = goPrev;
+
+// 全画面タップ：どこでも「次へ」
+tapAll.addEventListener('click', goNext);
+
+// パネル内タップ：ボタン以外なら「次へ」
+panelEl.addEventListener('click', (e)=>{
+  if(e.target.closest('.btn')) return; // ボタン操作はそのまま
+  goNext();
+});
+
+// スワイプ：左右で前後
+let tsX=0, tsY=0, t0=0;
+function onTS(e){ const t=e.changedTouches[0]; tsX=t.clientX; tsY=t.clientY; t0=performance.now(); }
+function onTE(e){
+  const t=e.changedTouches[0], dx=t.clientX-tsX, dy=t.clientY-tsY, dt=performance.now()-t0;
+  if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){ dx<0 ? goNext() : goPrev(); }
+  else if(dt<300 && Math.abs(dx)<10 && Math.abs(dy)<10){ goNext(); } // 軽いタップ
+}
+tapAll.addEventListener('touchstart', onTS, {passive:true});
+tapAll.addEventListener('touchend', onTE, {passive:true});
+panelEl.addEventListener('touchstart', onTS, {passive:true});
+panelEl.addEventListener('touchend', onTE, {passive:true});
 
 // ---------- 雷光フラッシュ ----------
 const lightning = {
@@ -361,7 +439,7 @@ function heatStreet(){
   ground.visible = false;
   motes.visible  = false;
   if(benchObj) benchObj.visible = false;
-  if(doorObj) doorObj.visible = false;
+  if(doorPivot) doorPivot.visible = false;
 
   key.intensity = 1.0; key.color.set(0xfff0c9);
   hemi.intensity = 0.5; hemi.color.set(0xffd8aa); hemi.groundColor.set(0x22150f);
@@ -377,17 +455,25 @@ function doorCold(){
   ground.visible = true;
   motes.visible  = true;
 
-  if(doorObj){
-    doorObj.visible = true;
-    if(doorObj.material){ doorObj.material.emissive = new THREE.Color(0x88aaff); doorObj.material.emissiveIntensity = 0.6; }
+  if(doorPivot){
+    doorPivot.visible = true;
+    doorPivot.rotation.set(0,0,0); // 閉じておく
   }
+  // 扉の微発光
+  if(doorObj && doorObj.material){
+    doorObj.material.emissive = new THREE.Color(0x88aaff);
+    doorObj.material.emissiveIntensity = 0.6;
+  }
+  // 開閉状態リセット
+  doorState.opening = false; doorState.opened = false;
+
   if(benchObj) benchObj.visible = false;
 
   key.intensity = 0.9; key.color.set(0xcfe9ff);
   hemi.intensity = 0.55; hemi.color.set(0x9fefff); hemi.groundColor.set(0x0c0f14);
   snow.visible = false;
 }
-// HIGHLAND（昼）：写真だけ（地面/ベンチ/モヤOFF）
+// HIGHLAND（昼）：写真だけ
 function toHighland(){
   setLog('高原（昼）：写真背景 hisyochi.png');
   scene.background = highlandBgTex;
@@ -396,14 +482,14 @@ function toHighland(){
   ground.visible = false;
   motes.visible  = false;
   if(benchObj) benchObj.visible = false;
-  if(doorObj) doorObj.visible = false;
+  if(doorPivot) doorPivot.visible = false;
 
   hemi.intensity = 0.45; hemi.color.set(0xb4ffd0); hemi.groundColor.set(0x1a2d1d);
   key.intensity  = 0.6;  key.color.set(0xe9fff3);
 
   snow.visible = false;
 }
-// NIGHT：写真だけ（夜の写真）
+// NIGHT：写真だけ
 function toNight(){
   setLog('高原（夜）：写真背景 hisyochi1.png');
   scene.background = nightBgTex;
@@ -412,7 +498,7 @@ function toNight(){
   ground.visible = false;
   motes.visible  = false;
   if(benchObj) benchObj.visible = false;
-  if(doorObj) doorObj.visible = false;
+  if(doorPivot) doorPivot.visible = false;
 
   hemi.intensity = 0.35; hemi.color.set(0xa8d3ff); hemi.groundColor.set(0x142026);
   key.intensity  = 0.4;  key.color.set(0xcfe5ff);
@@ -422,16 +508,14 @@ function toNight(){
 // DESCENT：写真（hisyochi2.png）＋吹雪（地面は非表示）
 function descentColdNoPhoto(){
   setLog('地獄の寒気：写真（hisyochi2.png）＋吹雪');
-  scene.background = descentBgTex; // 背景に写真を使用
+  scene.background = descentBgTex;
   scene.fog.color.set(0x0a0f14);
   scene.fog.density = 0.04;
 
-  ground.visible = false; // 地面を消す
-  ground.material.map = null; ground.material.color.set(0x0f1418); ground.material.needsUpdate = true;
-
+  ground.visible = false;
   motes.visible  = false;
   if(benchObj) benchObj.visible = false;
-  if(doorObj)  doorObj.visible = false;
+  if(doorPivot)  doorPivot.visible = false;
 
   key.intensity = 0.6; key.color.set(0xbfdcff);
   hemi.intensity = 0.4; hemi.color.set(0x9fb9ff); hemi.groundColor.set(0x0a0f14);
@@ -445,7 +529,7 @@ function returnDoor(){
   ground.visible = true;
   motes.visible  = true;
 
-  if(doorObj) doorObj.visible = true;
+  if(doorPivot){ doorPivot.visible = true; doorPivot.rotation.set(0,0,0); }
   if(benchObj) benchObj.visible = false;
 
   key.intensity = 0.85; key.color.set(0xe9f3ff);
@@ -462,7 +546,35 @@ function fadeToBlack(){
   })();
 }
 
-// ---- 吹雪開始 ----
+// ---- 扉を開く（左ヒンジ回転） ----
+const doorState = { opening:false, opened:false };
+function openDoor(){
+  if(!doorPivot || doorState.opened || doorState.opening) return;
+  doorState.opening = true;
+
+  const start = performance.now();
+  const dur = 800;          // 0.8s
+  const from = 0;
+  const to   = -Math.PI * 2 / 3;;        // 左開き。右開きなら +1.2 など
+
+  if(doorObj && doorObj.material) doorObj.material.emissiveIntensity = 0.9;
+
+  function step(now){
+    const u = Math.min(1, (now - start)/dur);
+    const e = 1 - Math.pow(1-u, 3); // easeOutCubic
+    doorPivot.rotation.y = from + (to - from) * e;
+    if(u < 1){
+      requestAnimationFrame(step);
+    }else{
+      doorState.opening = false;
+      doorState.opened  = true;
+      if(doorObj && doorObj.material) doorObj.material.emissiveIntensity = 0.6;
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// ---- 吹雪開始（強度一気盛り） ----
 function startBlizzard(){
   snow.visible = true;
   const p = snow.userData.params;
@@ -470,7 +582,7 @@ function startBlizzard(){
   snow.material.size = 0.14;
 }
 
-// Camera
+// Camera 微Tween
 let camTween=null;
 function cameraFly(pos, look){
   const startP = camera.position.clone(), startT = controls.target.clone();
@@ -483,7 +595,7 @@ function cameraFly(pos, look){
 }
 function ease(x){ return x<0.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2; }
 
-// ---- 扉へパンチイン（ギィィ……の行で発火） ----
+// ---- 扉へパンチイン（「ドンッ！」の行で発火／完了後に扉を非表示） ----
 function cameraPunchToDoor(){
   const startP = camera.position.clone();
   const startT = controls.target.clone();
@@ -492,7 +604,7 @@ function cameraPunchToDoor(){
   const durMs  = 550;
   const t0 = performance.now();
   const prevEnabled = controls.enabled;
-  controls.enabled = false; // OrbitControls の更新を止める
+  controls.enabled = false;
 
   function run(){
     const u = Math.min(1, (performance.now() - t0) / durMs);
@@ -503,7 +615,7 @@ function cameraPunchToDoor(){
       requestAnimationFrame(run);
     } else {
       controls.enabled = prevEnabled;
-      if (doorObj) doorObj.visible = false; // ← パンチイン完了後に扉を消す
+      if (doorPivot) doorPivot.visible = false; // 扉を消す
     }
   }
   requestAnimationFrame(run);
@@ -590,15 +702,19 @@ function updateSnow(t, dt){
 }
 
 // ---------- 入出力 ----------
-window.addEventListener('resize', ()=>{
+function onResize(){
   const w=innerWidth, h=innerHeight;
   renderer.setSize(w,h);
   camera.aspect = w/h;
   camera.updateProjectionMatrix();
-});
+  window.scrollTo(0,0); // レイアウトがズレた時に戻す
+}
+window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', ()=>{ setTimeout(onResize, 200); });
+
 document.addEventListener('keydown',(e)=>{
-  if(e.key==='ArrowRight'||e.key===' '){ advance(+1); }
-  if(e.key==='ArrowLeft'){ advance(-1); }
+  if(e.key==='ArrowRight'||e.key===' '){ goNext(); }
+  if(e.key==='ArrowLeft'){ goPrev(); }
 });
 </script>
 </body>
