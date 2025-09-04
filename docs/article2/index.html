@@ -592,7 +592,7 @@ function ease(x){ return x<0.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2; }
 function cameraPunchToDoor(){
   const startP = camera.position.clone();
   const startT = controls.target.clone();
-  const dpos = doorPivot ? doorPivot.position : new THREE.Vector3(-0.45,1,-2);
+  const dpos = doorPivot ? doorPivot.position : new THREE.Vector3(0,1,-2);
   const endP = new THREE.Vector3(dpos.x, dpos.y + 0.25, dpos.z + 1.4);
   const endT = new THREE.Vector3(dpos.x, dpos.y + 0.1,  dpos.z);
   const durMs  = 550, t0 = performance.now();
