@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>避暑地の扉 — Three.js r146（雷光＆テキスト整列）</title>
+<title>避暑地の扉</title>
 <style>
   :root{ --bg:#07070a; --fg:#eaeef7; }
   html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;overflow:hidden}
@@ -241,8 +241,8 @@ const NARRATIVE = {
 {t:"ふと横の路地に白い靄がゆらめく。そこだけ空気が冷えているように見えた。"},
 {t:"――ひんやりとした風。冷たい扉が、そこに立っていた。"},
 {t:"扉の周りには涼を求める人だかりができ、皆、吸い寄せられるように近づき、開くのを待っている。"},
-{t:"僕も一歩踏み出しかけて、ふと足が止まる。"},
-{t:"ギィィ……と音を立て、扉がひとりでに開いた。次の瞬間、ドンッ！ 背中を強く押され、僕は中へ吸い込まれた。"},
+{t:"僕も一歩踏み出しかけて、ふと足が止まる。ギィィ……と音を立て、扉がひとりでに開いた"},
+{t:"次の瞬間、ドンッ！ 背中を強く押され、僕は中へ吸い込まれた。"},
 {t:"最後に感じたのは――背中に触れた手の、異様な冷たさだった。"},
 ],
 [SCENES.HIGHLAND]: [
@@ -462,7 +462,7 @@ function fadeToBlack(){
   })();
 }
 
-// ---- 吹雪開始（強度一気盛り） ----
+// ---- 吹雪開始 ----
 function startBlizzard(){
   snow.visible = true;
   const p = snow.userData.params;
@@ -470,7 +470,7 @@ function startBlizzard(){
   snow.material.size = 0.14;
 }
 
-// Camera 微Tween
+// Camera
 let camTween=null;
 function cameraFly(pos, look){
   const startP = camera.position.clone(), startT = controls.target.clone();
