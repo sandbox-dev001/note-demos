@@ -43,7 +43,7 @@
     margin:0 auto;
     padding:14px 18px;
     border:1px solid #1b1f28;border-radius:14px;
-    background:rgba(11,13,18,.25);          /* 半透明 */
+    background:rgba(11,13,18,.35);          /* 半透明 */
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     box-shadow:0 8px 24px rgba(0,0,0,.25);
@@ -588,27 +588,29 @@ function cameraFly(pos, look){
 }
 function ease(x){ return x<0.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2; }
 
-// ---- 扉へパンチイン（「ドンッ！」の行で発火／完了後に扉を非表示） ----
+// ---- 扉へパンチイン（固定座標を狙う。完了後に扉を非表示） ----
 function cameraPunchToDoor(){
   const startP = camera.position.clone();
   const startT = controls.target.clone();
-  const dpos = doorPivot ? doorPivot.position : new THREE.Vector3(0,1,-2);
-  const endP = new THREE.Vector3(dpos.x, dpos.y + 0.25, dpos.z + 1.4);
-  const endT = new THREE.Vector3(dpos.x, dpos.y + 0.1,  dpos.z);
+
+  // ★ 固定座標（以前のまま）
+  const endP = new THREE.Vector3(0, 1.25, -0.6);  // カメラ位置
+  const endT = new THREE.Vector3(0, 1.1,  -2.0);  // 注視点
+
   const durMs  = 550, t0 = performance.now();
   const prevEnabled = controls.enabled;
   controls.enabled = false;
 
   function run(){
     const u = Math.min(1, (performance.now() - t0) / durMs);
-    const e = 1 - Math.pow(1 - u, 3);
+    const e = 1 - Math.pow(1 - u, 3); // easeOutCubic
     camera.position.lerpVectors(startP, endP, e);
     controls.target.lerpVectors(startT, endT, e);
     if(u < 1){
       requestAnimationFrame(run);
     } else {
       controls.enabled = prevEnabled;
-      if (doorPivot) doorPivot.visible = false;
+      if (doorPivot) doorPivot.visible = false; // パンチイン後に扉を消す
     }
   }
   requestAnimationFrame(run);
