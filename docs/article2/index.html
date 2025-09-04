@@ -110,6 +110,7 @@ const texLoader = new THREE.TextureLoader();
 const streetBgTex   = texLoader.load('machi.png',     (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
 const highlandBgTex = texLoader.load('hisyochi.png',  (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
 const nightBgTex    = texLoader.load('hisyochi1.png', (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; });
+const descentBgTex  = texLoader.load('hisyochi2.png', (t)=>{ t.encoding=THREE.sRGBEncoding; t.minFilter=THREE.LinearFilter; }); /* 追加 */
 
 // ---- モヤ粒子（STREETでは非表示） ----
 const motes = makeMotes(260); scene.add(motes);
@@ -404,7 +405,7 @@ function toNight(){
 // DESCENT：写真は使わず、色背景＋地面＋吹雪
 function descentColdNoPhoto(){
   setLog('地獄の寒気：写真なし（色背景）＋地面＋吹雪');
-  scene.background = new THREE.Color(0x081018); // 冷たい暗青
+  scene.background = descentBgTex; // ← hisyochi2.png を背景に使用
   scene.fog.color.set(0x0a0f14);
   scene.fog.density = 0.04;
 
