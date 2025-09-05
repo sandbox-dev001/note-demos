@@ -427,7 +427,7 @@ function onPD(e){
   tsX = t.clientX; tsY = t.clientY; t0 = performance.now();
 }
 function onPU(e, origin){
-  もし(e.cancelable) e.prevent防止();
+   if(e.cancelable) e.preventDefault(); 
   // ボタン由来はここでは処理しない
   if(isFromButton(e)) return;
 
